@@ -26,9 +26,9 @@
 				}
 			}
 		},
-		"publisher": "Aman Khanna (nekename)",
+		"publisher": "RunicKing (Doctor Pickle)",
 		"shortDescription": "Use stream controllers",
-		"longDescription": "OpenDeck is a desktop application for using stream controller devices like the Elgato Stream Deck. OpenDeck supports plugins made for the original Stream Deck SDK, allowing many plugins made for the Elgato software ecosystem to be used.",
+		"longDescription": "PickleDeck is a community fork of OpenDeck, a desktop application for using stream controller devices like the Elgato Stream Deck. It supports plugins made for the original Stream Deck SDK, allowing many plugins made for the Elgato software ecosystem to be used. Maintained by RunicKing; changes are made by the AI model nicknamed Doctor Pickle.",
 		"category": "Productivity",
 		"icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
 		"macOS": {
@@ -36,7 +36,7 @@
 			"signingIdentity": "-"
 		}
 	},
-	"productName": "OpenDeck",
+	"productName": "PickleDeck",
 	"mainBinaryName": "opendeck",
 	"identifier": "opendeck",
 	"plugins": {
@@ -49,7 +49,7 @@
 	"app": {
 		"windows": [
 			{
-				"title": "OpenDeck",
+				"title": "PickleDeck",
 				"fullscreen": false,
 				"resizable": true,
 				"width": 800,
