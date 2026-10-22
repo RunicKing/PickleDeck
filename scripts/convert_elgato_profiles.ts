@@ -22,6 +22,7 @@ const args: Args = {
   deviceId: "sd-A7BSA4321ADW0S",
   pluginsDir: join(APPDATA, "opendeck", "plugins"),
   out: join(APPDATA, "opendeck", "profiles", "sd-A7BSA4321ADW0S"),
+  images: join(APPDATA, "opendeck", "images"),
   report: "elgato-import-report.json",
   dryRun: Deno.args.includes("--dry-run"),
 };
@@ -160,11 +161,17 @@ interface OpenDeckInstance {
   children: OpenDeckInstance[] | null;
 }
 
-function mapStates(elgStates: ElgState[] | undefined): OpenDeckState[] {
+function mapStates(elgStates: ElgState[] | undefined, save?: (i: number, ref: string) => string | null): OpenDeckState[] {
   const out: OpenDeckState[] = [];
-  for (const s of elgStates ?? []) {
+  for (const [i, s] of (elgStates ?? []).entries()) {
     const st: OpenDeckState = {};
-    if (typeof s.Image === "string" && s.Image) report.imagesSkipped++;
+    if (typeof s.Image === "string" && s.Image) {
+      if (save) {
+        const name = save(i, s.Image);
+        if (name) st.Image = name;
+        else report.imagesSkipped++;
+      } else report.imagesSkipped++;
+    }
     if (typeof s.Title === "string") st.Title = s.Title;
     if (typeof s.TitleColor === "string") st.TitleColor = s.TitleColor;
     if (typeof s.ShowTitle === "boolean") st.ShowTitle = s.ShowTitle;
@@ -177,17 +184,59 @@ function mapStates(elgStates: ElgState[] | undefined): OpenDeckState[] {
   }
   return out;
 }
+function resolveElgatoImage(pageDir: string, groupPath: string, ref: string): { data: Uint8Array; ext: string } | null {
+  const rel = (ref.startsWith("@") ? ref.slice(1) : ref).trim();
+  if (!rel) return null;
+  const base = rel.split(/[\\/]/).pop() ?? rel;
+  const candidates = rel.includes("/") || rel.includes("\\")
+    ? [join(pageDir, rel), join(groupPath, rel), join(pageDir, "Images", base), join(groupPath, "Images", base)]
+    : [join(pageDir, "Images", base), join(pageDir, base), join(groupPath, "Images", base), join(groupPath, base)];
+  for (const c of candidates) {
+    try {
+      const st = Deno.statSync(c);
+      if (st.isFile) {
+        const ext = (c.split(".").pop() ?? "png").toLowerCase();
+        return { data: Deno.readFileSync(c), ext };
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
+function saveSlotImage(profileName: string, pos: number, index: number, stateIdx: number, data: Uint8Array, ext: string): string | null {
+  const name = `${stateIdx}.${ext}`;
+  if (args.dryRun) return name;
+  const dir = join(args.images, args.deviceId, profileName, `Keypad.${pos}.${index}`);
+  try {
+    Deno.mkdirSync(dir, { recursive: true });
+    Deno.writeFileSync(join(dir, name), data);
+    return name;
+  } catch (error) {
+    console.error(`      image write failed (Keypad.${pos}.${index}/${name}): ${error}`);
+    return null;
+  }
+}
+
 interface Ctx {
   registry: Registry;
   device: string;
   profileName: string;
   pageUuid: string;
+  pageDir: string;
+  groupPath: string;
   pageNames: Map<string, string>; // lowercase pageuuid -> profile name
   parentMap: Map<string, string>; // lowercase pageuuid -> parent profile name ("" = ambiguous)
 }
 
-function switchInst(ctx: Ctx, src: ElgAction, uuid: string, name: string, spSettings: Record<string, unknown>): OpenDeckInstance {
-  const states = mapStates(src.States);
+function switchInst(ctx: Ctx, src: ElgAction, name: string, spSettings: Record<string, unknown>, position: number, index: number): OpenDeckInstance {
+  const save = (i: number, ref: string): string | null => {
+    const img = resolveElgatoImage(ctx.pageDir, ctx.groupPath, ref);
+    if (!img) { noteUnmapped("image:unresolved:" + ref.slice(0, 50)); return null; }
+    return saveSlotImage(ctx.profileName, position, index, i, img.data, img.ext);
+  };
+  const states = mapStates(src.States, save);
   return {
     action: { name, uuid: SP_SWITCHPROFILE, plugin: SP_PLUGIN, icon: "icons/plugin", states: [] },
     context: "", states, current_state: Number(src.State ?? 0), settings: spSettings, children: null,
@@ -196,6 +245,11 @@ function switchInst(ctx: Ctx, src: ElgAction, uuid: string, name: string, spSett
 
 function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: number, index: number): OpenDeckInstance | null {
   const settings = (src.Settings ?? {}) as Record<string, unknown>;
+  const save = (i: number, ref: string): string | null => {
+    const img = resolveElgatoImage(ctx.pageDir, ctx.groupPath, ref);
+    if (!img) { noteUnmapped("image:unresolved:" + ref.slice(0, 50)); return null; }
+    return saveSlotImage(ctx.profileName, position, index, i, img.data, img.ext);
+  };
   let instance: OpenDeckInstance | null = null;
 
   if (ELGATO_MULTIACTION.includes(uuid)) {
@@ -208,7 +262,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
       else noteUnmapped("multiaction-child:" + cu);
     });
     console.log(`      multi@${position}: ${children.length}/${childrenRaw.length} children ok`);
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name ?? "Multi Action", uuid: BUILTIN_MULTIACTION, plugin: "opendeck", icon: "opendeck/multi-action.png", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: {}, children: children.length ? children : null,
@@ -239,7 +293,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
       else noteUnmapped("routine-child:" + cu);
     });
     console.log(`      ${ELGATO_MULTIACTION.includes(uuid) ? "multi" : "routine"}@${position}: ${children.length}/${steps.length} children ok`);
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name ?? "Multi Action", uuid: BUILTIN_MULTIACTION, plugin: "opendeck", icon: "opendeck/multi-action.png", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: {}, children: children.length ? children : null,
@@ -247,7 +301,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
   } else if (uuid === "com.elgato.streamdeck.system.open") {
     const file = String(settings["path"] ?? "");
     if (!file) { noteUnmapped("system.open:no-path"); return null; }
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name || "Open File", uuid: "com.amansprojects.starterpack.runcommand", plugin: SP_PLUGIN, icon: "icons/plugin", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: { file }, children: null,
@@ -255,7 +309,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
   } else if (uuid === "com.elgato.streamdeck.system.website") {
     const url = String(settings["path"] ?? "");
     if (!url) { noteUnmapped("system.website:no-path"); return null; }
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name || "Open Website", uuid: "com.amansprojects.starterpack.openurl", plugin: SP_PLUGIN, icon: "icons/plugin", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: { down: url, up: "" }, children: null,
@@ -263,13 +317,13 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
   } else if (uuid === "com.elgato.streamdeck.system.text") {
     const text = settings["pastedText"];
     if (typeof text !== "string" || !text) { noteUnmapped("system.text:empty"); return null; }
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name || "Type Text", uuid: SP_INPUTSIM, plugin: SP_PLUGIN, icon: "icons/plugin", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: { down: text, up: "" }, children: null,
     };
   } else if (ELGATO_TOGGLE.includes(uuid)) {
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name ?? "Toggle Action", uuid: BUILTIN_TOGGLEACTION, plugin: "opendeck", icon: "opendeck/toggle-action.png", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: {}, children: null,
@@ -278,7 +332,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
     report.hotkeys++;
     const conv = convertHotkey(settings);
     if (!conv) { noteUnmapped("hotkey:" + JSON.stringify(settings).slice(0, 80)); return null; }
-    const states = mapStates(src.States);
+    const states = mapStates(src.States, save);
     instance = {
       action: { name: src.Name || "Hotkey", uuid: SP_INPUTSIM, plugin: SP_PLUGIN, icon: "icons/plugin", states: [] },
       context: "", states, current_state: Number(src.State ?? 0), settings: conv, children: null,
@@ -299,7 +353,7 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
     const target = String(settings["ProfileUUID"] ?? "").toLowerCase();
     const targetProfile = ctx.pageNames.get(target);
     if (!targetProfile) { noteUnmapped(uuid + ":target-not-physical"); return null; }
-    instance = switchInst(ctx, src, uuid, src.Name || "Open Page", { profile: targetProfile });
+    instance = switchInst(ctx, src, src.Name || "Open Page", { profile: targetProfile }, position, index);
   } else if (uuid === "com.elgato.streamdeck.profile.backtoparent") {
     // Elgato pops a navigation stack; starterpack can only jump statically.
     // Resolve via openchild edges (child -> parent); ambiguous children fail.
@@ -308,15 +362,15 @@ function convertInstance(src: ElgAction, uuid: string, ctx: Ctx, position: numbe
     report.pageNav++;
     report.mappedByUuid["backtoparent->switchprofile"] = (report.mappedByUuid["backtoparent->switchprofile"] ?? 0) + 1;
     const pseudo: ElgAction = src;
-    instance = switchInst(ctx, pseudo, uuid, src.Name || "Back to Parent", { profile: parent });
+    instance = switchInst(ctx, pseudo, src.Name || "Back to Parent", { profile: parent }, position, index);
   } else if (uuid === "com.elgato.streamdeck.switchprofile") {
     report.switchProfiles++;
-    instance = switchInst(ctx, src, uuid, src.Name || "Switch Profile", { profile: String(settings["Name"] ?? "") });
+    instance = switchInst(ctx, src, src.Name || "Switch Profile", { profile: String(settings["Name"] ?? "") }, position, index);
   } else {
     const reg = ctx.registry.byUuid.get(uuid);
     if (reg && ctx.registry.plugins.has(reg.plugin)) {
       noteMapped(uuid);
-      const states = mapStates(src.States);
+      const states = mapStates(src.States, save);
       instance = {
         action: { name: (src.Name && src.Name.trim()) || reg.name, uuid: reg.uuid, plugin: reg.plugin, icon: reg.icon, states: [] },
         context: "", states, current_state: Number(src.State ?? 0), settings, children: null,
@@ -420,7 +474,7 @@ for (const p of pages) {
 for (const p of pages) {
   const keyCount = KEY_COUNTS[p.modelName]!;
   const gridWidth = GRID_WIDTH[p.modelName]!;
-  const ctx: Ctx = { registry, device: args.deviceId, profileName: p.profileName, pageUuid: p.pageDir.toLowerCase(), pageNames, parentMap };
+  const ctx: Ctx = { registry, device: args.deviceId, profileName: p.profileName, pageUuid: p.pageDir.toLowerCase(), pageDir: join(p.groupPath, "Profiles", p.pageDir), groupPath: p.groupPath, pageNames, parentMap };
   const keys: (OpenDeckInstance | null)[] = new Array(keyCount).fill(null);
   let used = 0, dropped = 0;
   for (const controller of p.page.Controllers) {
