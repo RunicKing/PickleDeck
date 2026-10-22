@@ -10,6 +10,7 @@ mod plugins;
 mod power_events;
 mod shared;
 mod store;
+mod virtual_deck;
 mod zip_extract;
 
 mod built_info {
@@ -105,6 +106,7 @@ async fn main() {
 			frontend::settings::open_config_directory,
 			frontend::settings::open_log_directory,
 			frontend::settings::get_build_info,
+			virtual_deck::open_virtual_deck,
 			frontend::settings::backup_config_directory,
 			frontend::settings::restore_config_directory,
 		])
@@ -214,6 +216,7 @@ If you have already donated, thank you so much for your support!"#,
 			application_watcher::init_application_watcher();
 			device_sleep::init_device_sleep();
 			power_events::init_power_events();
+			tokio::spawn(async { virtual_deck::start().await; });
 
 			let label = IconMenuItemBuilder::with_id("label", PRODUCT_NAME)
 				.icon(app.default_window_icon().unwrap().clone())
@@ -221,10 +224,13 @@ If you have already donated, thank you so much for your support!"#,
 				.build(app)?;
 			let show = MenuItemBuilder::with_id("show", "Show").build(app)?;
 			let hide = MenuItemBuilder::with_id("hide", "Hide").build(app)?;
+			let virtualdeck = MenuItemBuilder::with_id("virtualdeck", "Virtual Deck").build(app)?;
 			let restart = MenuItemBuilder::with_id("restart", "Restart").build(app)?;
 			let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 			let separator = PredefinedMenuItem::separator(app)?;
-			let menu = MenuBuilder::new(app).items(&[&label, &separator, &show, &hide, &separator, &restart, &quit]).build()?;
+			let menu = MenuBuilder::new(app)
+				.items(&[&label, &separator, &show, &hide, &virtualdeck, &separator, &restart, &quit])
+				.build()?;
 			let _tray = TrayIconBuilder::with_id("opendeck")
 				.menu(&menu)
 				.icon(app.default_window_icon().unwrap().clone())
@@ -244,6 +250,13 @@ If you have already donated, thank you so much for your support!"#,
 					let _ = match event.id().as_ref() {
 						"show" => show_window(app),
 						"hide" => hide_window(app),
+						"virtualdeck" => {
+							let app = app.clone();
+							tokio::spawn(async move {
+								let _ = virtual_deck::open_window(&app).await;
+							});
+							Ok(())
+						}
 						"restart" => shared::restart(app),
 						"quit" => {
 							app.exit(0);

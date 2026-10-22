@@ -141,6 +141,9 @@ pub struct Settings {
 	pub separatewine: bool,
 	pub developer: bool,
 	pub disableelgato: bool,
+	pub virtualdeck: bool,
+	pub virtualdeck_rows: u8,
+	pub virtualdeck_columns: u8,
 }
 
 impl Default for Settings {
@@ -160,6 +163,9 @@ impl Default for Settings {
 			separatewine: false,
 			developer: false,
 			disableelgato: false,
+			virtualdeck: true,
+			virtualdeck_rows: 4,
+			virtualdeck_columns: 8,
 		}
 	}
 }

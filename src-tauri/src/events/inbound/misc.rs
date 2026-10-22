@@ -50,7 +50,7 @@ pub struct SwitchProfileEvent {
 
 pub async fn switch_profile(event: SwitchProfileEvent) -> Result<(), anyhow::Error> {
 	let app_handle = crate::APP_HANDLE.get().unwrap();
-	app_handle.get_webview_window("main").unwrap().emit("switch_profile", event)?;
+	app_handle.emit("switch_profile", event)?;
 	Ok(())
 }
 

@@ -12,6 +12,9 @@ export type Settings = {
 	separatewine: boolean;
 	developer: boolean;
 	disableelgato: boolean;
+	virtualdeck: boolean;
+	virtualdeck_rows: number;
+	virtualdeck_columns: number;
 };
 
 import { invoke } from "@tauri-apps/api/core";

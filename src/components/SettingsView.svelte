@@ -139,6 +139,37 @@
 		</div>
 
 		<div class="flex flex-row items-center m-2 space-x-2">
+			<label for="settings-virtualdeck" class="text-neutral-400">{$t("settings.virtualdeck")}</label>
+			<input type="checkbox" bind:checked={$settings.virtualdeck} id="settings-virtualdeck" />
+			<input
+				type="number"
+				min="1"
+				max="8"
+				bind:value={$settings.virtualdeck_rows}
+				class="w-12 px-1 text-neutral-300 border border-neutral-600 rounded-lg"
+				id="settings-virtualdeck_rows"
+				aria-label={$t("settings.virtualdeck_rows")}
+			/>
+			<span class="text-neutral-500">×</span>
+			<input
+				type="number"
+				min="1"
+				max="8"
+				bind:value={$settings.virtualdeck_columns}
+				class="w-12 px-1 text-neutral-300 border border-neutral-600 rounded-lg"
+				id="settings-virtualdeck_columns"
+				aria-label={$t("settings.virtualdeck_columns")}
+			/>
+			<button
+				class="px-2 py-1 text-sm text-neutral-300 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg"
+				on:click={() => invoke("open_virtual_deck")}
+			>
+				{$t("settings.virtualdeck.open")}
+			</button>
+			<Tooltip>{$t("settings.virtualdeck.tooltip")}</Tooltip>
+		</div>
+
+		<div class="flex flex-row items-center m-2 space-x-2">
 			<label for="settings-updatecheck" class="text-neutral-400">{$t("settings.updatecheck")}</label>
 			<input type="checkbox" bind:checked={$settings.updatecheck} id="settings-updatecheck" />
 		</div>

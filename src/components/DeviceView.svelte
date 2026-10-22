@@ -16,6 +16,7 @@
 	export let profile: Profile;
 
 	export let selectedDevice: string;
+	export let press = false;
 
 	function handleDragStart({ dataTransfer }: DragEvent, controller: string, position: number) {
 		if (!dataTransfer) return;
@@ -191,6 +192,7 @@
 							size={device.id.startsWith("sd-") && device.rows == 4 && device.columns == 8 ? 192 : 144}
 							label="{$t('device_view.key')} {String.fromCharCode(65 + r)}{c + 1}"
 							tabindex={focusedRow === r && focusedCol === c ? 0 : -1}
+							{press}
 						/>
 					{/each}
 				</div>

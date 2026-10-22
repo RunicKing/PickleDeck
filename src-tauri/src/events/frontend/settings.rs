@@ -31,9 +31,23 @@ pub async fn set_settings(_app: AppHandle, settings: crate::store::Settings) -> 
 	crate::device_sleep::update_sleep_timeout_minutes(settings.sleep_timeout_minutes).await?;
 	crate::device_sleep::update_sleep_when_computer_locked(settings.sleep_when_computer_locked).await?;
 
+	let old = (
+		crate::store::get_settings().value.virtualdeck,
+		crate::store::get_settings().value.virtualdeck_rows,
+		crate::store::get_settings().value.virtualdeck_columns,
+	);
 	let mut store = crate::store::SETTINGS_MUT.lock().await;
 	store.value = settings;
 	store.save()?;
+	drop(store);
+	let new = (
+		crate::store::get_settings().value.virtualdeck,
+		crate::store::get_settings().value.virtualdeck_rows,
+		crate::store::get_settings().value.virtualdeck_columns,
+	);
+	if old != new {
+		tokio::spawn(crate::virtual_deck::apply(old, new));
+	}
 	Ok(())
 }
 

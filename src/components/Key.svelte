@@ -39,6 +39,7 @@
 	export let active: boolean = true;
 	export let scale: number = 1;
 	export let isTouchPoint: boolean = false;
+	export let press: boolean = false;
 	let pressed: boolean = false;
 
 	let state: ActionState | undefined;
@@ -61,6 +62,11 @@
 	function select(event: MouseEvent | KeyboardEvent) {
 		if (event instanceof MouseEvent && event.ctrlKey) return;
 		$openContextMenu = null;
+		if (press && slot) {
+			// Virtual deck mode: clicking a slot presses it on the virtual device.
+			if (context) invoke("trigger_virtual_press", { context });
+			return;
+		}
 		if (!slot) {
 			$inspectedInstance = context;
 			return;

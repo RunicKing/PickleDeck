@@ -155,5 +155,13 @@
 	"settings.sleep_when_computer_locked": "Sleep when computer is locked:",
 	"settings.sleep_when_computer_locked.tooltip": "If this option is enabled, devices will enter sleep mode when the computer locks and all key presses will be suppressed until it is unlocked.",
 	"settings.statistics": "Contribute statistics:",
+	"settings.virtualdeck": "Virtual deck:",
+	"settings.virtualdeck_rows": "Rows",
+	"settings.virtualdeck_columns": "Columns",
+	"settings.virtualdeck.open": "Open",
+	"settings.virtualdeck.tooltip": "A software-only device that runs in its own window. Click its keys to press them. Toggling or resising updates the registered device.",
+	"deck.title": "Virtual Deck",
+	"deck.profile": "Profile",
+	"deck.no_device": "Device not available (enable it in settings).",
 	"settings.updatecheck": "Check for updates:"
 }
