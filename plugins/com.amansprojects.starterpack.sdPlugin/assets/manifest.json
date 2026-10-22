@@ -2,7 +2,7 @@
 	"Name": "PickleDeck Starter Pack",
 	"Description": "PickleDeck starter pack plugin",
 	"Author": "Aman Khanna (nekename)",
-	"Version": "2.14.2",
+	"Version": "2.14.3",
 	"CodePaths": {
 		"x86_64-pc-windows-msvc": "x86_64-pc-windows-msvc/bin/opendeck-starterpack.exe",
 		"x86_64-apple-darwin": "x86_64-apple-darwin/bin/opendeck-starterpack",
@@ -14,7 +14,7 @@
 	"CodePathMac": "x86_64-apple-darwin/bin/opendeck-starterpack",
 	"CodePathLin": "x86_64-unknown-linux-gnu/bin/opendeck-starterpack",
 	"Icon": "icons/plugin",
-	"Category": "OpenDeck",
+	"Category": "PickleDeck",
 	"OS": [
 		{
 			"Platform": "mac",

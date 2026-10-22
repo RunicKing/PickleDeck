@@ -38,7 +38,7 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 
 		if parent.action.uuid == "opendeck.toggleaction" && parent.states.len() < children.len() {
 			parent.states.push(crate::shared::ActionState {
-				image: "opendeck/toggle-action.png".to_owned(),
+				image: "opendeck/toggle-action.svg".to_owned(),
 				..Default::default()
 			});
 			let _ = update_state(&app, parent.context.clone(), &mut locks).await;
@@ -286,6 +286,26 @@ pub async fn set_keylogic_hold(parent_context: ActionContext, hold_ms: u64) -> R
 	}
 	let map = parent.settings.as_object_mut().unwrap();
 	map.insert("hold".to_string(), serde_json::json!(hold_ms.clamp(50, 5000)));
+	let parent_settings = parent.settings.clone();
+
+	save_profile_now(&parent_context.device, &mut locks).await?;
+	Ok(parent_settings)
+}
+
+#[command]
+pub async fn set_keylogic_double(parent_context: ActionContext, double_ms: u64) -> Result<serde_json::Value, Error> {
+	let mut locks = acquire_locks_mut().await;
+	let Some(parent) = get_instance_mut(&parent_context, &mut locks).await? else {
+		return Ok(serde_json::Value::Null);
+	};
+	if parent.action.uuid != "opendeck.keylogic" {
+		return Ok(parent.settings.clone());
+	}
+	if !parent.settings.is_object() {
+		parent.settings = serde_json::Value::Object(serde_json::Map::new());
+	}
+	let map = parent.settings.as_object_mut().unwrap();
+	map.insert("double".to_string(), serde_json::json!(double_ms.clamp(50, 2000)));
 	let parent_settings = parent.settings.clone();
 
 	save_profile_now(&parent_context.device, &mut locks).await?;

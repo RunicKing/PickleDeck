@@ -247,7 +247,14 @@ pub async fn initialise_plugin(path: path::PathBuf, spawner_tx: mpsc::Sender<Spa
 		// Check for Node.js installation and version in one go.
 		let command = if is_flatpak() { "flatpak-spawn" } else { "node" };
 		let extra_args = if is_flatpak() { vec!["--host", "node"] } else { vec![] };
-		let version_output = Command::new(command).args(&extra_args).arg("--version").output();
+		let mut version_command = Command::new(command);
+		version_command.args(&extra_args).arg("--version");
+		#[cfg(target_os = "windows")]
+		{
+			use std::os::windows::process::CommandExt;
+			version_command.creation_flags(0x08000000);
+		}
+		let version_output = version_command.output();
 		if version_output.is_err() || String::from_utf8(version_output.unwrap().stdout).unwrap().trim() < "v20.0.0" {
 			return Err(anyhow!("Node.js version 20.0.0 or higher is required"));
 		}
@@ -279,9 +286,14 @@ pub async fn initialise_plugin(path: path::PathBuf, spawner_tx: mpsc::Sender<Spa
 	} else if use_wine {
 		let command = if is_flatpak() { "flatpak-spawn" } else { "wine" };
 		let extra_args = if is_flatpak() { vec!["--host", "wine"] } else { vec![] };
-		let result = Command::new(command)
-			.args(&extra_args)
-			.arg("--version")
+		let mut version_command = Command::new(command);
+		version_command.args(&extra_args).arg("--version");
+		#[cfg(target_os = "windows")]
+		{
+			use std::os::windows::process::CommandExt;
+			version_command.creation_flags(0x08000000);
+		}
+		let result = version_command
 			.stdout(Stdio::null())
 			.stderr(Stdio::null())
 			.spawn()

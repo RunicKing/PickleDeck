@@ -13,13 +13,18 @@ use serde::Serialize;
 
 static KEY_DOWN_TARGETS: LazyLock<DashMap<(String, u8), Context>> = LazyLock::new(DashMap::new);
 
-/// Key Logic: (device, key) -> (press sequence number, profile the press started under).
-/// Present while a keylogic key is held and its tap branch has not fired yet.
-static KEY_HOLD: LazyLock<DashMap<(String, u8), (u64, String)>> = LazyLock::new(DashMap::new);
+/// Key Logic: (device, key) -> (press sequence number, profile the press started under,
+/// double-press window ms). Present while a keylogic key is held and the long-press branch
+/// has not fired yet.
+static KEY_HOLD: LazyLock<DashMap<(String, u8), (u64, String, u64)>> = LazyLock::new(DashMap::new);
+/// Key Logic: (device, key) -> (sequence of the pending single press, profile).
+/// A keylogic press whose tap branch waits for a possible second press (double press).
+static KEY_DOUBLES: LazyLock<DashMap<(String, u8), (u64, String)>> = LazyLock::new(DashMap::new);
 static KEY_HOLD_SEQ: AtomicU64 = AtomicU64::new(0);
 const KEYLOGIC_DEFAULT_HOLD: u64 = 500;
+const KEYLOGIC_DEFAULT_DOUBLE: u64 = 275;
 
-/// Fires one branch of a keylogic instance: index 0 = tap, 1 = long press.
+/// Fires one branch of a keylogic instance: index 0 = single press, 1 = double press, 2 = long press.
 /// Mirrors the multiaction child dispatch plus its automatic state cycling.
 /// Runs without holding the profile locks across the plugin round-trip.
 async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: usize) -> Result<(), anyhow::Error> {
@@ -188,18 +193,24 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 		)
 		.await?;
 	} else if instance.action.uuid == "opendeck.keylogic" {
-		// Do not dispatch anything yet; the tap or long-press branch fires later.
+		// Do not dispatch anything yet; the press, double press or long-press branch fires later.
 		let hold_ms = instance
 			.settings
 			.get("hold")
 			.and_then(|v| v.as_u64())
-			.filter(|v| *v >= 50)
+			.filter(|v| (50..=5000).contains(v))
 			.unwrap_or(KEYLOGIC_DEFAULT_HOLD);
+		let double_ms = instance
+			.settings
+			.get("double")
+			.and_then(|v| v.as_u64())
+			.filter(|v| (50..=2000).contains(v))
+			.unwrap_or(KEYLOGIC_DEFAULT_DOUBLE);
 		drop(locks);
 
 		let device = device.to_owned();
 		let seq = KEY_HOLD_SEQ.fetch_add(1, Ordering::SeqCst);
-		KEY_HOLD.insert((device.to_owned(), key), (seq, context.profile.clone()));
+		KEY_HOLD.insert((device.to_owned(), key), (seq, context.profile.clone(), double_ms));
 		tokio::spawn(async move {
 			tokio::time::sleep(Duration::from_millis(hold_ms)).await;
 			let Some(entry) = KEY_HOLD.get(&(device.clone(), key)) else { return };
@@ -209,7 +220,7 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 			let profile = entry.value().1.clone();
 			drop(entry);
 			KEY_HOLD.remove(&(device.clone(), key));
-			if let Err(error) = fire_keylogic_branch(device.clone(), key, profile, 1).await {
+			if let Err(error) = fire_keylogic_branch(device.clone(), key, profile, 2).await {
 				log::warn!("Key Logic long press failed: {}", error);
 			}
 		});
@@ -245,8 +256,9 @@ pub async fn key_up(device: &str, key: u8) -> Result<(), anyhow::Error> {
 		return Ok(());
 	};
 	if context != expected_context {
-		// profile switched while the key was held; cancel any pending long press
+		// profile switched while the key was held; cancel any pending branches
 		KEY_HOLD.remove(&(device.to_owned(), key));
+		KEY_DOUBLES.remove(&(device.to_owned(), key));
 		return Ok(());
 	}
 
@@ -254,13 +266,36 @@ pub async fn key_up(device: &str, key: u8) -> Result<(), anyhow::Error> {
 	// so the profile write lock is not held across the plugin round-trip.
 	let slot_uuid = get_slot_mut(&context, &mut locks).await?.as_ref().map(|instance| instance.action.uuid.clone());
 	if slot_uuid.as_deref() == Some("opendeck.keylogic") {
+		let device = device.to_owned();
 		drop(locks);
-		if let Some(entry) = KEY_HOLD.remove(&(device.to_owned(), key)) {
-			if let Err(error) = fire_keylogic_branch(device.to_owned(), key, entry.1.1, 0).await {
-				log::warn!("Key Logic tap failed: {}", error);
+		if let Some(entry) = KEY_HOLD.remove(&(device.clone(), key)) {
+			let (_, profile, double_ms) = entry.1;
+			if KEY_DOUBLES.remove(&(device.clone(), key)).is_some() {
+				// second release inside the double window => double press branch
+				if let Err(error) = fire_keylogic_branch(device.clone(), key, profile, 1).await {
+					log::warn!("Key Logic double press failed: {}", error);
+				}
+			} else {
+				// first release: hold the press open for the double window, then fire
+				// the single press branch if no second press arrives in time.
+				let seq = KEY_HOLD_SEQ.fetch_add(1, Ordering::SeqCst);
+				KEY_DOUBLES.insert((device.clone(), key), (seq, profile.clone()));
+				tokio::spawn(async move {
+					tokio::time::sleep(Duration::from_millis(double_ms)).await;
+					let Some(pending) = KEY_DOUBLES.get(&(device.clone(), key)) else { return };
+					if pending.value().0 != seq {
+						return;
+					}
+					let profile = pending.value().1.clone();
+					drop(pending);
+					KEY_DOUBLES.remove(&(device.clone(), key));
+					if let Err(error) = fire_keylogic_branch(device.clone(), key, profile, 0).await {
+						log::warn!("Key Logic single press failed: {}", error);
+					}
+				});
 			}
 		}
-		// no entry means the long-press timer already fired the other branch
+		// no hold entry means the long-press timer already fired the long branch
 		return Ok(());
 	}
 

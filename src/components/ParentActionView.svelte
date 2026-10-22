@@ -35,7 +35,13 @@
 				? $t("parent_action_view.keylogic")
 				: $t("parent_action_view.multi");
 	const branchLabel = (index: number) =>
-		index == 0 ? $t("parent_action_view.tap") : index == 1 ? $t("parent_action_view.long") : $t("parent_action_view.extra");
+		index == 0
+			? $t("parent_action_view.press")
+			: index == 1
+				? $t("parent_action_view.double")
+				: index == 2
+					? $t("parent_action_view.long")
+					: $t("parent_action_view.extra");
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
@@ -104,6 +110,13 @@
 		profile.keys[$inspectedParentAction!.position]!.settings = settings;
 	}
 
+	async function setDouble(event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		const val = Math.max(50, parseInt(target.value) || 275);
+		const settings = await invoke<any>("set_keylogic_double", { parentContext, doubleMs: val });
+		profile.keys[$inspectedParentAction!.position]!.settings = settings;
+	}
+
 	function handleListKeydown(event: KeyboardEvent) {
 		if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
 		const list = event.currentTarget as HTMLElement;
@@ -158,6 +171,19 @@
 				on:input={setHold}
 				class="no-spinner w-20 px-1 py-0.5 text-center text-sm text-neutral-300 bg-neutral-900 border border-neutral-600 rounded"
 				aria-label={$t("parent_action_view.hold")}
+			/>
+			<span class="text-xs text-neutral-500">ms</span>
+			<label class="text-xs text-neutral-400 pl-2" for="keylogic-double">{$t("parent_action_view.double_window")}</label>
+			<input
+				id="keylogic-double"
+				type="number"
+				min="50"
+				max="2000"
+				step="25"
+				value={parentSettings?.double ?? 275}
+				on:input={setDouble}
+				class="no-spinner w-20 px-1 py-0.5 text-center text-sm text-neutral-300 bg-neutral-900 border border-neutral-600 rounded"
+				aria-label={$t("parent_action_view.double_window")}
 			/>
 			<span class="text-xs text-neutral-500">ms</span>
 		</div>

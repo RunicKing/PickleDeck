@@ -86,6 +86,7 @@ async fn main() {
 			frontend::instances::set_state,
 			frontend::instances::set_child_delay,
 			frontend::instances::set_keylogic_hold,
+			frontend::instances::set_keylogic_double,
 			frontend::instances::update_image,
 			frontend::instances::trigger_virtual_press,
 			frontend::profiles::get_profiles,
@@ -258,11 +259,25 @@ If you have already donated, thank you so much for your support!"#,
 							Ok(())
 						}
 						"restart" => shared::restart(app),
-						"quit" => {
-							app.exit(0);
-							Ok(())
-						}
-						_ => Ok(()),
+					"quit" => {
+						log::info!("Tray Quit requested");
+						// app.exit never propagates out of the menu handler, so terminate the
+						// process ourselves after letting plugin children die first (fast)
+						let (tx, rx) = std::sync::mpsc::channel();
+						std::thread::spawn(move || {
+							if let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+								log::info!("Quit: shutting down plugins ahead of exit");
+								runtime.block_on(crate::plugins::deactivate_plugins());
+								log::info!("Quit: plugin shutdown finished");
+							}
+							let _ = tx.send(());
+						});
+						// plugin shutdown finishes in well under a second; 1500ms is a safety cap
+						let _ = rx.recv_timeout(std::time::Duration::from_millis(1500));
+						log::info!("Quit: exiting process");
+						std::process::exit(0);
+					}
+					_ => Ok(()),
 					};
 				})
 				.build(app)?;
@@ -405,26 +420,69 @@ If you have already donated, thank you so much for your support!"#,
 
 	app.run(|app, event| {
 		if let tauri::RunEvent::Exit = event {
-			futures::executor::block_on(async {
-				let device_ids = shared::DEVICES.iter().filter(|entry| !entry.id.starts_with("sd-")).map(|entry| entry.id.clone()).collect::<Vec<_>>();
-				for id in device_ids {
-					let _ = events::outbound::devices::clear_screen(id).await;
-				}
-			});
-
+			log::info!("RunEvent::Exit received");
 			#[cfg(windows)]
 			{
 				std::thread::sleep(std::time::Duration::from_millis(750));
-				futures::executor::block_on(plugins::deactivate_plugins());
+
+				// needs a runtime with a reactor - futures::executor::block_on would
+				// panic inside tokio's async work and orphan the plugin processes
+				let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+				{
+					let done = done.clone();
+					std::thread::spawn(move || {
+						if let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+							runtime.block_on(async {
+								let device_ids = shared::DEVICES.iter().filter(|entry| !entry.id.starts_with("sd-")).map(|entry| entry.id.clone()).collect::<Vec<_>>();
+								for id in device_ids {
+									let _ = events::outbound::devices::clear_screen(id).await;
+								}
+
+								log::info!("Exit: deactivating plugins");
+						plugins::deactivate_plugins().await;
+						log::info!("Exit: plugins deactivated");
+
+								log::info!("Exit: flushing stale profiles");
+						match store::profiles::flush_stale_profiles().await {
+									Ok(_) => log::info!("Successfully flushed all stale profiles on exit"),
+									Err(error) => log::error!("Failed to flush stale profiles on exit: {error}"),
+								}
+
+								elgato::reset_devices().await;
+							});
+						}
+						done.store(true, std::sync::atomic::Ordering::SeqCst);
+					});
+				}
+
+				// never let shutdown work hang the app
+				let mut waited = std::time::Duration::ZERO;
+				while !done.load(std::sync::atomic::Ordering::SeqCst) && waited < std::time::Duration::from_secs(15) {
+					std::thread::sleep(std::time::Duration::from_millis(50));
+					waited += std::time::Duration::from_millis(50);
+				}
+				if waited >= std::time::Duration::from_secs(15) {
+					log::error!("Shutdown cleanup timed out after 15s; forcing exit");
+					std::process::exit(0);
+				}
 			}
 
-			let flush_future = store::profiles::flush_stale_profiles();
-			match futures::executor::block_on(flush_future) {
-				Ok(_) => log::info!("Successfully flushed all stale profiles on exit"),
-				Err(error) => log::error!("Failed to flush stale profiles on exit: {error}"),
+			#[cfg(not(windows))]
+			{
+				let device_ids = shared::DEVICES.iter().filter(|entry| !entry.id.starts_with("sd-")).map(|entry| entry.id.clone()).collect::<Vec<_>>();
+				for id in device_ids {
+					let _ = futures::executor::block_on(events::outbound::devices::clear_screen(id));
+				}
+
+				let flush_future = store::profiles::flush_stale_profiles();
+				match futures::executor::block_on(flush_future) {
+					Ok(_) => log::info!("Successfully flushed all stale profiles on exit"),
+					Err(error) => log::error!("Failed to flush stale profiles on exit: {error}"),
+				}
+
+				tokio::spawn(elgato::reset_devices());
 			}
 
-			tokio::spawn(elgato::reset_devices());
 			use tauri_plugin_aptabase::EventTracker;
 			app.flush_events_blocking();
 		}
