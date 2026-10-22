@@ -43,6 +43,12 @@
 					if (payload.device == VIRTUAL_DEVICE_ID) await reload();
 				},
 			),
+			listen(
+				"switch_page",
+				async ({ payload }: { payload: { device: string; page: number } }) => {
+					if (payload.device == VIRTUAL_DEVICE_ID) await reload();
+				},
+			),
 		];
 		reload();
 		return () => unlisteners.forEach((promise) => promise.then((fn) => fn()));

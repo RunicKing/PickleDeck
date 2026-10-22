@@ -64,17 +64,29 @@ impl DiskActionContext {
 pub struct DiskActionInstance {
 	pub action: Action,
 	pub context: DiskActionContext,
+	#[serde(default, skip_serializing_if = "is_zero_page")]
+	pub page: u8,
 	pub states: Vec<ActionState>,
 	pub current_state: u16,
 	pub settings: serde_json::Value,
 	pub children: Option<Vec<DiskActionInstance>>,
 }
 
-impl From<ActionInstance> for DiskActionInstance {
-	fn from(mut value: ActionInstance) -> Self {
-		let disk_context: DiskActionContext = value.context.clone().into();
-		let config_dir = crate::shared::config_dir();
-		let image_dir = config_dir.join("images").join(&value.context.device).join(&value.context.profile).join(disk_context.to_string());
+fn is_zero_page(page: &u8) -> bool {
+	*page == 0
+}
+
+/// Converts an instance for disk storage, writing its state images to the profile's
+/// image directory for the given page. Page 0 keeps the legacy (page-less) path so
+/// existing profile data is not orphaned; pages >= 1 get a `p<page>` segment.
+pub fn to_disk(mut value: ActionInstance, page: u8) -> DiskActionInstance {
+	let disk_context: DiskActionContext = value.context.clone().into();
+	let config_dir = crate::shared::config_dir();
+	let mut image_dir = config_dir.join("images").join(&value.context.device).join(&value.context.profile);
+	if page != 0 {
+		image_dir = image_dir.join(format!("p{page}"));
+	}
+	let image_dir = image_dir.join(disk_context.to_string());
 
 		let normalise_path = |value: &str| -> String {
 			let path = Path::new(value);
@@ -137,14 +149,14 @@ impl From<ActionInstance> for DiskActionInstance {
 		value.action.icon = normalise_path(&value.action.icon);
 		value.action.property_inspector = normalise_path(&value.action.property_inspector);
 
-		Self {
+		DiskActionInstance {
 			context: disk_context,
+			page,
 			action: value.action,
 			states: value.states,
 			current_state: value.current_state,
 			settings: value.settings,
-			children: value.children.map(|c| c.into_iter().map(|v| v.into()).collect()),
-		}
+			children: value.children.map(|c| c.into_iter().map(|v| to_disk(v, page)).collect()),
 	}
 }
 
@@ -166,14 +178,11 @@ impl DiskActionInstance {
 
 		let reconstruct_image = |image: &mut String| {
 			if let Some(true) = image.chars().next().map(|v| v.is_numeric()) {
-				*image = config_dir
-					.join("images")
-					.join(&device)
-					.join(&profile)
-					.join(self.context.to_string())
-					.join(&image)
-					.to_string_lossy()
-					.into_owned();
+				let mut base = config_dir.join("images").join(&device).join(&profile);
+				if self.page != 0 {
+					base = base.join(format!("p{}", self.page));
+				}
+				*image = base.join(self.context.to_string()).join(&image).to_string_lossy().into_owned();
 			} else {
 				*image = reconstruct_path(image);
 			}
@@ -205,19 +214,45 @@ impl DiskActionInstance {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct DiskProfile {
+pub struct DiskPage {
 	pub keys: Vec<Option<DiskActionInstance>>,
 	pub sliders: Vec<Option<DiskActionInstance>>,
 	#[serde(default)]
 	pub infobars: Vec<Option<DiskActionInstance>>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct DiskProfile {
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub pages: Vec<DiskPage>,
+
+	// Legacy single-page fields only present in older profile files; migrated to
+	// page 0 on load and skipped on save.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub keys: Vec<Option<DiskActionInstance>>,
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub sliders: Vec<Option<DiskActionInstance>>,
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub infobars: Vec<Option<DiskActionInstance>>,
+}
+
 impl From<&Profile> for DiskProfile {
 	fn from(value: &Profile) -> Self {
 		Self {
-			keys: value.keys.clone().into_iter().map(|x| x.map(|v| v.into())).collect(),
-			sliders: value.sliders.clone().into_iter().map(|x| x.map(|v| v.into())).collect(),
-			infobars: value.infobars.clone().into_iter().map(|x| x.map(|v| v.into())).collect(),
+			pages: value
+				.pages
+				.iter()
+				.enumerate()
+				.map(|(page, p)| DiskPage {
+					keys: p.keys.clone().into_iter().map(|x| x.map(|v| to_disk(v, page as u8))).collect(),
+					sliders: p.sliders.clone().into_iter().map(|x| x.map(|v| to_disk(v, page as u8))).collect(),
+					infobars: p.infobars.clone().into_iter().map(|x| x.map(|v| to_disk(v, page as u8))).collect(),
+				})
+				.collect(),
+
+			keys: Vec::new(),
+			sliders: Vec::new(),
+			infobars: Vec::new(),
 		}
 	}
 }
@@ -229,11 +264,28 @@ impl DiskProfile {
 		let _ = iter.nth(1);
 		let mut id = iter.map(|x| x.to_string_lossy()).collect::<Vec<_>>().join("/");
 		id = id[..id.len() - 5].to_owned();
+
+		// Legacy single-page files (no `pages` field) migrate their flat slots to page 0.
+		let pages = if self.pages.is_empty() {
+			vec![DiskPage {
+				keys: self.keys,
+				sliders: self.sliders,
+				infobars: self.infobars,
+			}]
+		} else {
+			self.pages
+		};
+
 		Profile {
 			id,
-			keys: self.keys.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
-			sliders: self.sliders.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
-			infobars: self.infobars.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
+			pages: pages
+				.into_iter()
+				.map(|p| crate::shared::Page {
+					keys: p.keys.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
+					sliders: p.sliders.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
+					infobars: p.infobars.into_iter().map(|x| x.map(|v| v.into_action_instance(path))).collect(),
+				})
+				.collect(),
 
 			stale: false,
 		}

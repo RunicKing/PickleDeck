@@ -43,6 +43,8 @@ pub struct DeviceInfo {
 	#[serde_inline_default(0)]
 	pub infobars: u8,
 	pub r#type: u8,
+	#[serde_inline_default(0)]
+	pub current_page: u8,
 }
 
 pub static DEVICES: LazyLock<DashMap<String, DeviceInfo>> = LazyLock::new(DashMap::new);
@@ -448,16 +450,32 @@ pub struct ActionInstance {
 	pub children: Option<Vec<ActionInstance>>,
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Page {
+	pub keys: Vec<Option<ActionInstance>>,
+	pub sliders: Vec<Option<ActionInstance>>,
+	#[serde(default)]
+	pub infobars: Vec<Option<ActionInstance>>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Profile {
+	pub id: String,
+	#[serde(default)]
+	pub pages: Vec<Page>,
+	#[serde(skip)]
+	pub stale: bool,
+}
+
+/// A profile's visible page, returned to the frontend in the legacy single-page shape.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ProfilePage {
 	pub id: String,
 	pub keys: Vec<Option<ActionInstance>>,
 	pub sliders: Vec<Option<ActionInstance>>,
 	#[serde(default)]
 	pub infobars: Vec<Option<ActionInstance>>,
-
-	#[serde(skip)]
-	pub stale: bool,
+	pub pages: usize,
 }
 
 /// A map of category names to a list of actions in that category.

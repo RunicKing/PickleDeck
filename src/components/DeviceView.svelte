@@ -10,6 +10,7 @@
 	import { t } from "$lib/i18n";
 	import { inspectedInstance, inspectedParentAction } from "$lib/propertyInspector";
 
+	import { ask } from "@tauri-apps/plugin-dialog";
 	import { invoke } from "@tauri-apps/api/core";
 
 	export let device: DeviceInfo;
@@ -158,6 +159,37 @@
 		if (index === -1) return;
 		[focusedRow, focusedCol] = rowColFromFlatIndex(index);
 	}
+
+	// Pages strip: switch pages, add a new page, right-click a page chip to remove it.
+	$: currentPage = Math.min(device.current_page ?? 0, Math.max(profile.pages - 1, 0));
+
+	async function switchToPage(page: number) {
+		if (page === currentPage) return;
+		try {
+			await invoke("set_selected_page", { device: device.id, page });
+		} catch (error: any) {
+			console.error(error);
+		}
+	}
+
+	async function addPage() {
+		try {
+			await invoke("add_page", { device: device.id });
+		} catch (error: any) {
+			console.error(error);
+		}
+	}
+
+	async function removePage(event: MouseEvent, page: number) {
+		event.preventDefault();
+		if (profile.pages <= 1) return;
+		if (!(await ask($t("device_view.pages.prompt", { page: page + 1 }), { title: $t("device_view.pages.title"), okLabel: $t("dialog.yes"), cancelLabel: $t("dialog.no") }))) return;
+		try {
+			await invoke("remove_page", { device: device.id, page });
+		} catch (error: any) {
+			console.error(error);
+		}
+	}
 </script>
 
 {#key device}
@@ -249,6 +281,37 @@
 				/>
 			{/each}
 		</div>
+	</div>
+
+	<div
+		class="flex flex-row justify-center items-center gap-1.5 pb-3"
+		class:hidden={$inspectedParentAction || selectedDevice != device.id}
+		role="group"
+		aria-label={$t("device_view.page", { page: currentPage + 1 })}
+	>
+		{#each Array(profile.pages) as _, i}
+			<button
+				type="button"
+				aria-label={$t("device_view.page", { page: i + 1 })}
+				aria-pressed={currentPage === i}
+				class="flex justify-center items-center w-7 h-7 rounded-md text-sm font-medium transition-colors select-none {currentPage === i
+					? "bg-neutral-200 text-neutral-900"
+					: "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200"}"
+				on:click={() => switchToPage(i)}
+				on:contextmenu={(event) => removePage(event, i)}
+			>
+				{i + 1}
+			</button>
+		{/each}
+		<button
+			type="button"
+			aria-label={$t("device_view.pages.add")}
+			title={$t("device_view.pages.add")}
+			class="flex justify-center items-center w-7 h-7 rounded-md text-lg leading-none bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200 transition-colors select-none"
+			on:click={addPage}
+		>
+			+
+		</button>
 	</div>
 {/key}
 

@@ -6,4 +6,5 @@ export type Profile = {
 	keys: (ActionInstance | null)[];
 	sliders: (ActionInstance | null)[];
 	infobars: (ActionInstance | null)[];
+	pages: number;
 };

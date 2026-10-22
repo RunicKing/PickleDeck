@@ -41,6 +41,11 @@
 		}
 	});
 
+	listen("switch_page", async ({ payload }: { payload: { device: string; page: number } }) => {
+		devices = await invoke("get_devices");
+		if (selectedProfiles[payload.device]) selectedProfiles[payload.device] = await invoke("get_selected_profile", { device: payload.device });
+	});
+
 	(async () => (devices = await invoke("get_devices")))();
 	listen("devices", ({ payload }: { payload: { [id: string]: DeviceInfo } }) => (devices = payload));
 

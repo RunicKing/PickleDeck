@@ -7,4 +7,6 @@ export type DeviceInfo = {
 	touchpoints: number;
 	infobars: number;
 	type: number;
+	current_page: number;
+	plugin?: string;
 };

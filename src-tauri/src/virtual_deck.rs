@@ -48,11 +48,11 @@ async fn ensure_layout() -> Result<(), anyhow::Error> {
 
 	let known = get_device_profiles(DEVICE_ID)?.contains(&"Default".to_owned());
 	if !known {
+		let mut page = crate::shared::Page::default();
+		page.keys = vec![None; layout.rows as usize * layout.columns as usize];
 		let profile = crate::shared::Profile {
 			id: "Default".to_owned(),
-			keys: vec![None; layout.rows as usize * layout.columns as usize],
-			sliders: vec![],
-			infobars: vec![],
+			pages: vec![page],
 			stale: false,
 		};
 		fs::write(dir.join("Default.json"), serde_json::to_string_pretty(&profile)?)?;
@@ -63,9 +63,9 @@ async fn ensure_layout() -> Result<(), anyhow::Error> {
 	let mut locks = acquire_locks_mut().await;
 	let device = device_info();
 	if let Ok(store) = locks.profile_stores.get_profile_store_mut(&device, "Default").await {
-		if store.value.keys.len() < needed {
+		if store.value.pages.first_mut().unwrap().keys.len() < needed {
 			log::info!("Virtual deck: growing Default profile to {} slots", needed);
-			store.value.keys.resize(needed, None);
+			store.value.pages.first_mut().unwrap().keys.resize(needed, None);
 			let _ = save_profile_now(DEVICE_ID, &mut locks).await;
 		}
 	}
@@ -84,6 +84,7 @@ fn device_info() -> DeviceInfo {
 		touchpoints: 0,
 		infobars: 0,
 		r#type: 2,
+		current_page: 0,
 	}
 }
 

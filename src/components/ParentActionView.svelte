@@ -43,6 +43,29 @@
 					? $t("parent_action_view.long")
 					: $t("parent_action_view.extra");
 
+	// Key Logic: exactly three fixed branch slots, identified by each child's context index (last context segment).
+	$: keylogicSlots = [0, 1, 2].map((slot) => children.find((child) => Number(child.context.split(".").at(-1)) == slot) ?? null);
+
+	// Duplicate: pasted/at-slot create refreshes the whole parent row from the response.
+	function handleSlotDrop({ dataTransfer }: DragEvent, slot: number) {
+		if (!dataTransfer?.getData("action")) return;
+		let action = JSON.parse(dataTransfer?.getData("action"));
+		handleSlotAdd(action, slot);
+	}
+
+	async function handleSlotAdd(action: Action, slot: number) {
+		if (keylogicSlots[slot] || action.uuid.startsWith("opendeck.")) return;
+		let response: ActionInstance | null = await invoke("create_instance", { context: $inspectedParentAction, action, slotIndex: slot });
+		if (response) profile.keys[$inspectedParentAction!.position] = response;
+	}
+
+	async function removeSlot(slot: number) {
+		const instance = keylogicSlots[slot];
+		if (!instance) return;
+		await invoke("remove_instance", { context: instance.context });
+		profile.keys[$inspectedParentAction!.position]!.children = children.filter((child) => child.context != instance.context);
+	}
+
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
 		if (event.dataTransfer?.types.includes("action")) event.dataTransfer.dropEffect = "copy";
@@ -199,7 +222,52 @@
 	aria-label="{titleText} {$t('parent_action_view.children')}"
 	on:keydown={handleListKeydown}
 >
-	{#each children as instance, index}
+	{#if parentUuid == "opendeck.keylogic"}
+		{#each keylogicSlots as slotInstance, slot}
+		{#if slotInstance}
+				<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions a11y-no-noninteractive-tabindex -->
+				<div
+					class="flex flex-row items-center mx-4 my-1 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg focus-within:outline-solid focus-within:outline-offset-2 focus-within:outline-blue-500"
+					on:click|stopPropagation={() => ($inspectedInstance = slotInstance.context)}
+					on:focus|stopPropagation={() => ($inspectedInstance = slotInstance.context)}
+					role="listitem"
+					tabindex={slot == 0 ? 0 : -1}
+				>
+					<Key
+						inslot={slotInstance}
+						context={null}
+						active={false}
+						scale={3 / 4}
+						role="presentation"
+						tabindex={-1}
+						label={branchLabel(slot)}
+					/>
+					<p class="ml-4 text-xl text-neutral-300">{slotInstance.action.name}</p>
+					<button
+						class="ml-auto mr-10"
+						on:click|stopPropagation={() => removeSlot(slot)}
+						tabindex={-1}
+						aria-label={$t("parent_action_view.remove", { name: slotInstance.action.name })}
+					>
+						<Trash size="32" class="text-neutral-400" />
+					</button>
+				</div>
+			{:else}
+				<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
+				<div
+					class="flex flex-row items-center mx-4 my-1 p-3 bg-neutral-800 border border-dashed border-neutral-600 rounded-lg"
+					on:dragover={handleDragOver}
+					on:drop={(event) => handleSlotDrop(event, slot)}
+					role="listitem"
+					tabindex={-1}
+				>
+					<p class="ml-8 text-xl text-neutral-500">{branchLabel(slot)}</p>
+					<p class="ml-auto mr-8 text-sm text-neutral-600">{$t("parent_action_view.drag_paste")}</p>
+				</div>
+			{/if}
+		{/each}
+	{:else}
+		{#each children as instance, index}
 		<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
 		<div
 			class="flex flex-row items-center mx-4 my-1 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-neutral-600 rounded-lg focus-within:outline-solid focus-within:outline-offset-2 focus-within:outline-blue-500"
@@ -257,6 +325,7 @@
 			</div>
 		{/if}
 	{/each}
+	{/if}
 	<!-- svelte-ignore a11y-no-noninteractive-tabindex a11y-no-noninteractive-element-interactions -->
 	<div
 		class="flex flex-row items-center mx-4 mt-2 mb-4 p-3 bg-neutral-700 hover:bg-neutral-600 transition-colors border border-dashed border-neutral-600 rounded-lg focus-within:outline-solid focus-within:outline-offset-2 focus-within:outline-blue-500"

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, command};
 use tokio::fs::remove_dir_all;
 
 #[command]
-pub async fn create_instance(app: AppHandle, mut action: Action, context: Context) -> Result<Option<ActionInstance>, Error> {
+pub async fn create_instance(app: AppHandle, mut action: Action, context: Context, slot_index: Option<u16>) -> Result<Option<ActionInstance>, Error> {
 	if !action.controllers.contains(&context.controller) {
 		return Ok(None);
 	}
@@ -21,9 +21,21 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 
 	if let Some(parent) = slot {
 		let Some(children) = &mut parent.children else { return Ok(None) };
-		let index = match children.last() {
-			None => 1,
-			Some(instance) => instance.context.index + 1,
+		let index = if parent.action.uuid == "opendeck.keylogic" {
+			// Key logic has three fixed branches; honour a requested slot, otherwise the first free one.
+			let used = children.iter().map(|c| c.context.index).collect::<std::collections::BTreeSet<_>>();
+			match slot_index {
+				Some(slot) if slot < 3 && !used.contains(&slot) => slot,
+				_ => match (0u16..3).find(|i| !used.contains(i)) {
+					Some(index) => index,
+					None => return Ok(None),
+				},
+			}
+		} else {
+			match children.last() {
+				None => 1,
+				Some(instance) => instance.context.index + 1,
+			}
 		};
 
 		let instance = ActionInstance {
@@ -37,20 +49,20 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 		children.push(instance.clone());
 
 		if parent.action.uuid == "opendeck.toggleaction" && parent.states.len() < children.len() {
-			parent.states.push(crate::shared::ActionState {
-				image: "opendeck/toggle-action.svg".to_owned(),
-				..Default::default()
-			});
-			let _ = update_state(&app, parent.context.clone(), &mut locks).await;
-		}
+				parent.states.push(crate::shared::ActionState {
+					image: "opendeck/toggle-action.svg".to_owned(),
+					..Default::default()
+				});
+				let _ = update_state(&app, parent.context.clone(), &mut locks).await;
+			}
 
-		save_profile_now(&context.device, &mut locks).await?;
-		drop(locks);
-		let _ = crate::events::outbound::will_appear::will_appear(&instance).await;
+			save_profile_now(&context.device, &mut locks).await?;
+			drop(locks);
+			let _ = crate::events::outbound::will_appear::will_appear(&instance).await;
 
-		let locks = acquire_locks().await;
-		let slot = get_slot(&context, &locks).await?.clone();
-		Ok(slot)
+			let locks = acquire_locks().await;
+			let slot = get_slot(&context, &locks).await?.clone();
+			Ok(slot)
 	} else {
 		let instance = ActionInstance {
 			action: action.clone(),
@@ -76,11 +88,13 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 }
 
 fn instance_images_dir(context: &ActionContext) -> std::path::PathBuf {
-	config_dir()
-		.join("images")
-		.join(&context.device)
-		.join(&context.profile)
-		.join(format!("{}.{}.{}", context.controller, context.position, context.index))
+	// Image dirs are page-scoped: page 0 keeps the legacy (page-less) path, other pages get `p<page>`.
+	let page = crate::shared::DEVICES.get(&context.device).map(|d| d.current_page).unwrap_or(0);
+	let mut dir = config_dir().join("images").join(&context.device).join(&context.profile);
+	if page != 0 {
+		dir = dir.join(format!("p{page}"));
+	}
+	dir.join(format!("{}.{}.{}", context.controller, context.position, context.index))
 }
 
 #[command]
@@ -105,13 +119,25 @@ pub async fn move_instance(source: Context, destination: Context, retain: bool) 
 	};
 	new.context = ActionContext::from_context(destination.clone(), 0);
 	if let Some(children) = &mut new.children {
-		for (index, instance) in children.iter_mut().enumerate() {
-			instance.context = ActionContext::from_context(destination.clone(), index as u16 + 1);
-			for (i, state) in instance.states.iter_mut().enumerate() {
-				if !instance.action.states[i].image.is_empty() {
-					state.image = instance.action.states[i].image.clone();
+		let is_keylogic = new.action.uuid == "opendeck.keylogic";
+		for (position, child) in children.iter_mut().enumerate() {
+			child.context = if is_keylogic {
+				// Preserve branch assignment on move: context index IS the branch slot.
+				ActionContext {
+					device: destination.device.clone(),
+					profile: destination.profile.clone(),
+					controller: destination.controller.clone(),
+					position: destination.position,
+					index: child.context.index,
+				}
+			} else {
+				ActionContext::from_context(destination.clone(), position as u16 + 1)
+			};
+			for (i, state) in child.states.iter_mut().enumerate() {
+				if !child.action.states[i].image.is_empty() {
+					state.image = child.action.states[i].image.clone();
 				} else {
-					state.image = instance.action.icon.clone();
+					state.image = child.action.icon.clone();
 				}
 			}
 		}

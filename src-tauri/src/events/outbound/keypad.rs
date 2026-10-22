@@ -42,7 +42,9 @@ async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: u
 	let children = instance.children.clone().unwrap_or_default();
 	drop(locks);
 
-	let Some(child) = children.get(index) else { return Ok(()) };
+	// Branch identity is the child's assigned context index (its slot), not array position,
+	// so holes created by removing middle slots keep remaining branches stable.
+	let Some(child) = children.iter().find(|c| c.context.index as usize == index) else { return Ok(()) };
 
 	send_to_plugin(
 		&child.action.plugin,
@@ -75,7 +77,7 @@ async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: u
 	let refreshed: Option<crate::shared::ActionContext> = match get_slot_mut(&context, &mut locks).await? {
 		Some(instance) if instance.action.uuid == "opendeck.keylogic" => {
 			instance.children.as_mut().and_then(|children| {
-				let child = children.get_mut(index)?;
+				let child = children.iter_mut().find(|c| c.context.index as usize == index)?;
 				if child.states.len() == 2 && !child.action.disable_automatic_states {
 					child.current_state = (child.current_state + 1) % (child.states.len() as u16);
 				}

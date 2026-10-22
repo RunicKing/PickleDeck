@@ -19,6 +19,8 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		}
 
 		event.payload.plugin = uuid.to_owned();
+		// Restore the device's last selected page before it becomes visible to the rest of the app.
+		event.payload.current_page = crate::store::profiles::DEVICE_STORES.read().await.get_selected_page(&event.payload.id);
 		let _ = crate::events::outbound::devices::device_did_connect(&event.payload.id, (&event.payload).into()).await;
 		DEVICES.insert(event.payload.id.clone(), event.payload.clone());
 		let _ = crate::events::outbound::devices::set_device_brightness(&event.payload.id, crate::store::get_settings().value.brightness).await;
@@ -28,13 +30,16 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		let mut locks = crate::store::profiles::acquire_locks_mut().await;
 		let selected_profile = locks.device_stores.get_selected_profile(&event.payload.id)?;
 		let profile = locks.profile_stores.get_profile_store(&DEVICES.get(&event.payload.id).unwrap(), &selected_profile)?;
+		let page_index = (event.payload.current_page as usize).min(profile.value.pages.len().saturating_sub(1));
 		for instance in profile
 			.value
-			.keys
-			.iter()
+			.pages
+			.get(page_index)
+			.map(|p| p.keys.iter())
+			.unwrap_or_default()
 			.flatten()
-			.chain(profile.value.sliders.iter().flatten())
-			.chain(profile.value.infobars.iter().flatten())
+			.chain(profile.value.pages.get(page_index).map(|p| p.sliders.iter()).unwrap_or_default().flatten())
+			.chain(profile.value.pages.get(page_index).map(|p| p.infobars.iter()).unwrap_or_default().flatten())
 		{
 			let _ = crate::events::outbound::will_appear::will_appear(instance).await;
 		}
@@ -61,13 +66,16 @@ pub async fn deregister_device(uuid: &str, event: PayloadEvent<String>) -> Resul
 
 		let selected_profile = locks.device_stores.get_selected_profile(&event.payload)?;
 		let profile = locks.profile_stores.get_profile_store(&DEVICES.get(&event.payload).unwrap(), &selected_profile)?;
+		let page_index = (DEVICES.get(&event.payload).unwrap().current_page as usize).min(profile.value.pages.len().saturating_sub(1));
 		for instance in profile
 			.value
-			.keys
-			.iter()
+			.pages
+			.get(page_index)
+			.map(|p| p.keys.iter())
+			.unwrap_or_default()
 			.flatten()
-			.chain(profile.value.sliders.iter().flatten())
-			.chain(profile.value.infobars.iter().flatten())
+			.chain(profile.value.pages.get(page_index).map(|p| p.sliders.iter()).unwrap_or_default().flatten())
+			.chain(profile.value.pages.get(page_index).map(|p| p.infobars.iter()).unwrap_or_default().flatten())
 		{
 			let _ = crate::events::outbound::will_appear::will_disappear(instance, false).await;
 		}
