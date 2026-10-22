@@ -60,6 +60,15 @@ impl ProfileStores {
 							*slot = None;
 						} else if let Some(children) = &mut instance.children {
 							children.retain_mut(|child| keep_instance(child));
+
+							// Migrate legacy Key Logic branch numbering: old instances numbered
+							// children by array position + 1; branch identity is now the child's
+							// own context index (0 = single press, 1 = double, 2 = long).
+							if instance.action.uuid == "opendeck.keylogic" {
+								for (position, child) in children.iter_mut().enumerate() {
+									child.context.index = position as u16;
+								}
+							}
 						}
 					}
 				}
