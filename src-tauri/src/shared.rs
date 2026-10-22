@@ -494,6 +494,19 @@ pub static CATEGORIES: LazyLock<RwLock<HashMap<String, Category>>> = LazyLock::n
 					}
 				))
 				.unwrap(),
+				serde_json::from_value(serde_json::json!(
+					{
+						"name": "Key Logic",
+						"icon": "opendeck/key-logic.svg",
+						"plugin": "opendeck",
+						"uuid": "opendeck.keylogic",
+						"tooltip": "Run a different action on tap versus long press",
+						"controllers": [ "Keypad" ],
+						"states": [ { "image": "opendeck/key-logic.svg" } ],
+						"supported_in_multi_actions": false
+					}
+				))
+				.unwrap(),
 			],
 		},
 	);

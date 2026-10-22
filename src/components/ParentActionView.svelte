@@ -28,6 +28,14 @@
 	$: parentContext = profile.keys[$inspectedParentAction!.position]!.context;
 	let parentSettings: any;
 	$: parentSettings = profile.keys[$inspectedParentAction!.position]!.settings;
+	$: titleText =
+		parentUuid == "opendeck.toggleaction"
+			? $t("parent_action_view.toggle")
+			: parentUuid == "opendeck.keylogic"
+				? $t("parent_action_view.keylogic")
+				: $t("parent_action_view.multi");
+	const branchLabel = (index: number) =>
+		index == 0 ? $t("parent_action_view.tap") : index == 1 ? $t("parent_action_view.long") : $t("parent_action_view.extra");
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
@@ -37,7 +45,8 @@
 	async function addAction(action: Action) {
 		if (
 			(parentUuid == "opendeck.multiaction" && !action.supported_in_multi_actions) ||
-			(parentUuid == "opendeck.toggleaction" && (action.uuid == "opendeck.multiaction" || action.uuid == "opendeck.toggleaction"))
+			(parentUuid == "opendeck.toggleaction" && (action.uuid == "opendeck.multiaction" || action.uuid == "opendeck.toggleaction")) ||
+			(parentUuid == "opendeck.keylogic" && action.uuid.startsWith("opendeck."))
 		) {
 			return;
 		}
@@ -88,6 +97,13 @@
 		profile.keys[$inspectedParentAction!.position]!.settings = settings;
 	}
 
+	async function setHold(event: Event) {
+		const target = event.currentTarget as HTMLInputElement;
+		const val = Math.max(50, parseInt(target.value) || 500);
+		const settings = await invoke<any>("set_keylogic_hold", { parentContext, holdMs: val });
+		profile.keys[$inspectedParentAction!.position]!.settings = settings;
+	}
+
 	function handleListKeydown(event: KeyboardEvent) {
 		if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
 		const list = event.currentTarget as HTMLElement;
@@ -128,7 +144,24 @@
 
 <div class="px-6 pt-6 pb-4 text-neutral-300">
 	<button class="float-right text-xl" on:click={() => ($inspectedParentAction = null)} aria-label={$t("settings.close")}>✕</button>
-	<h1 class="font-semibold text-2xl">{parentUuid == "opendeck.toggleaction" ? $t("parent_action_view.toggle") : $t("parent_action_view.multi")}</h1>
+	<h1 class="font-semibold text-2xl">{titleText}</h1>
+	{#if parentUuid == "opendeck.keylogic"}
+		<div class="flex flex-row items-center gap-2 pt-2">
+			<label class="text-xs text-neutral-400" for="keylogic-hold">{$t("parent_action_view.hold")}</label>
+			<input
+				id="keylogic-hold"
+				type="number"
+				min="50"
+				max="5000"
+				step="50"
+				value={parentSettings?.hold ?? 500}
+				on:input={setHold}
+				class="no-spinner w-20 px-1 py-0.5 text-center text-sm text-neutral-300 bg-neutral-900 border border-neutral-600 rounded"
+				aria-label={$t("parent_action_view.hold")}
+			/>
+			<span class="text-xs text-neutral-500">ms</span>
+		</div>
+	{/if}
 </div>
 
 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -137,7 +170,7 @@
 	class="flex flex-col h-128 overflow-auto"
 	on:click={() => ($inspectedInstance = null)}
 	role="list"
-	aria-label="{parentUuid == 'opendeck.toggleaction' ? $t('parent_action_view.toggle') : $t('parent_action_view.multi')} {$t('parent_action_view.children')}"
+	aria-label="{titleText} {$t('parent_action_view.children')}"
 	on:keydown={handleListKeydown}
 >
 	{#each children as instance, index}
@@ -160,11 +193,15 @@
 				scale={3 / 4}
 				role="presentation"
 				tabindex={-1}
-				label={(parentUuid == "opendeck.toggleaction" ? $t("parent_action_view.toggle") : $t("parent_action_view.multi")) +
-					" " +
-					$t("parent_action_view.child") +
-					" " +
-					(index + 1)}
+				label={parentUuid == "opendeck.keylogic"
+					? branchLabel(index)
+					: (parentUuid == "opendeck.toggleaction"
+						? $t("parent_action_view.toggle")
+						: $t("parent_action_view.multi")) +
+						" " +
+						$t("parent_action_view.child") +
+						" " +
+						(index + 1)}
 			/>
 			<p class="ml-4 text-xl text-neutral-300">{instance.action.name}</p>
 			<button

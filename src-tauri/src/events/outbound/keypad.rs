@@ -5,12 +5,86 @@ use crate::shared::{ActionContext, Context};
 use crate::store::profiles::{acquire_locks_mut, get_slot_mut, mark_profile_stale};
 
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
 use serde::Serialize;
 
 static KEY_DOWN_TARGETS: LazyLock<DashMap<(String, u8), Context>> = LazyLock::new(DashMap::new);
+
+/// Key Logic: (device, key) -> (press sequence number, profile the press started under).
+/// Present while a keylogic key is held and its tap branch has not fired yet.
+static KEY_HOLD: LazyLock<DashMap<(String, u8), (u64, String)>> = LazyLock::new(DashMap::new);
+static KEY_HOLD_SEQ: AtomicU64 = AtomicU64::new(0);
+const KEYLOGIC_DEFAULT_HOLD: u64 = 500;
+
+/// Fires one branch of a keylogic instance: index 0 = tap, 1 = long press.
+/// Mirrors the multiaction child dispatch plus its automatic state cycling.
+/// Runs without holding the profile locks across the plugin round-trip.
+async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: usize) -> Result<(), anyhow::Error> {
+	let mut locks = acquire_locks_mut().await;
+	let context = Context {
+		device: device.clone(),
+		profile: profile.clone(),
+		controller: "Keypad".to_owned(),
+		position: key,
+	};
+	let Some(instance) = get_slot_mut(&context, &mut locks).await? else { return Ok(()) };
+	if instance.action.uuid != "opendeck.keylogic" {
+		return Ok(());
+	}
+	let children = instance.children.clone().unwrap_or_default();
+	drop(locks);
+
+	let Some(child) = children.get(index) else { return Ok(()) };
+
+	send_to_plugin(
+		&child.action.plugin,
+		&KeyEvent {
+			event: "keyDown",
+			action: child.action.uuid.clone(),
+			context: child.context.clone(),
+			device: child.context.device.clone(),
+			payload: GenericInstancePayload::new(child),
+		},
+	)
+	.await?;
+
+	tokio::time::sleep(Duration::from_millis(100)).await;
+
+	send_to_plugin(
+		&child.action.plugin,
+		&KeyEvent {
+			event: "keyUp",
+			action: child.action.uuid.clone(),
+			context: child.context.clone(),
+			device: child.context.device.clone(),
+			payload: GenericInstancePayload::new(child),
+		},
+	)
+	.await?;
+
+	// Cycle the fired child's automatic state and refresh the UI.
+	let mut locks = acquire_locks_mut().await;
+	let refreshed: Option<crate::shared::ActionContext> = match get_slot_mut(&context, &mut locks).await? {
+		Some(instance) if instance.action.uuid == "opendeck.keylogic" => {
+			instance.children.as_mut().and_then(|children| {
+				let child = children.get_mut(index)?;
+				if child.states.len() == 2 && !child.action.disable_automatic_states {
+					child.current_state = (child.current_state + 1) % (child.states.len() as u16);
+				}
+				Some(child.context.clone())
+			})
+		}
+		_ => None,
+	};
+	if let Some(context) = refreshed {
+		let _ = update_state(crate::APP_HANDLE.get().unwrap(), context, &mut locks).await;
+	}
+	mark_profile_stale(&device, &mut locks).await?;
+	Ok(())
+}
 
 #[derive(Serialize)]
 struct KeyEvent {
@@ -113,6 +187,32 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 			},
 		)
 		.await?;
+	} else if instance.action.uuid == "opendeck.keylogic" {
+		// Do not dispatch anything yet; the tap or long-press branch fires later.
+		let hold_ms = instance
+			.settings
+			.get("hold")
+			.and_then(|v| v.as_u64())
+			.filter(|v| *v >= 50)
+			.unwrap_or(KEYLOGIC_DEFAULT_HOLD);
+		drop(locks);
+
+		let device = device.to_owned();
+		let seq = KEY_HOLD_SEQ.fetch_add(1, Ordering::SeqCst);
+		KEY_HOLD.insert((device.to_owned(), key), (seq, context.profile.clone()));
+		tokio::spawn(async move {
+			tokio::time::sleep(Duration::from_millis(hold_ms)).await;
+			let Some(entry) = KEY_HOLD.get(&(device.clone(), key)) else { return };
+			if entry.value().0 != seq {
+				return;
+			}
+			let profile = entry.value().1.clone();
+			drop(entry);
+			KEY_HOLD.remove(&(device.clone(), key));
+			if let Err(error) = fire_keylogic_branch(device.clone(), key, profile, 1).await {
+				log::warn!("Key Logic long press failed: {}", error);
+			}
+		});
 	} else {
 		send_to_plugin(
 			&instance.action.plugin,
@@ -145,6 +245,22 @@ pub async fn key_up(device: &str, key: u8) -> Result<(), anyhow::Error> {
 		return Ok(());
 	};
 	if context != expected_context {
+		// profile switched while the key was held; cancel any pending long press
+		KEY_HOLD.remove(&(device.to_owned(), key));
+		return Ok(());
+	}
+
+	// keylogic fast-path: clone the uuid then release locks before dispatching,
+	// so the profile write lock is not held across the plugin round-trip.
+	let slot_uuid = get_slot_mut(&context, &mut locks).await?.as_ref().map(|instance| instance.action.uuid.clone());
+	if slot_uuid.as_deref() == Some("opendeck.keylogic") {
+		drop(locks);
+		if let Some(entry) = KEY_HOLD.remove(&(device.to_owned(), key)) {
+			if let Err(error) = fire_keylogic_branch(device.to_owned(), key, entry.1.1, 0).await {
+				log::warn!("Key Logic tap failed: {}", error);
+			}
+		}
+		// no entry means the long-press timer already fired the other branch
 		return Ok(());
 	}
 

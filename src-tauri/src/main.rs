@@ -84,6 +84,7 @@ async fn main() {
 			frontend::instances::remove_instance,
 			frontend::instances::set_state,
 			frontend::instances::set_child_delay,
+			frontend::instances::set_keylogic_hold,
 			frontend::instances::update_image,
 			frontend::instances::trigger_virtual_press,
 			frontend::profiles::get_profiles,

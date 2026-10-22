@@ -65,7 +65,7 @@
 			$inspectedInstance = context;
 			return;
 		}
-		if (slot.action.uuid == "opendeck.multiaction" || slot.action.uuid == "opendeck.toggleaction") {
+		if (["opendeck.multiaction", "opendeck.toggleaction", "opendeck.keylogic"].includes(slot.action.uuid)) {
 			$inspectedParentAction = context;
 		} else {
 			$inspectedInstance = slot.context;
@@ -78,7 +78,7 @@
 			$inspectedInstance = context;
 			return;
 		}
-		if (slot.action.uuid != "opendeck.multiaction" && slot.action.uuid != "opendeck.toggleaction") {
+		if (![ "opendeck.multiaction", "opendeck.toggleaction", "opendeck.keylogic" ].includes(slot.action.uuid)) {
 			$inspectedInstance = slot.context;
 		} else {
 			$inspectedInstance = context;
