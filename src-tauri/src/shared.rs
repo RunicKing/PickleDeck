@@ -525,6 +525,45 @@ pub static CATEGORIES: LazyLock<RwLock<HashMap<String, Category>>> = LazyLock::n
 					}
 				))
 				.unwrap(),
+				serde_json::from_value(serde_json::json!(
+					{
+						"name": "Next Page",
+						"icon": "opendeck/next-page.svg",
+						"plugin": "opendeck",
+						"uuid": "opendeck.nextpage",
+						"tooltip": "Switch to the next page (wraps around)",
+						"controllers": [ "Keypad" ],
+						"states": [ { "image": "opendeck/next-page.svg" } ],
+						"supported_in_multi_actions": false
+					}
+				))
+				.unwrap(),
+				serde_json::from_value(serde_json::json!(
+					{
+						"name": "Previous Page",
+						"icon": "opendeck/previous-page.svg",
+						"plugin": "opendeck",
+						"uuid": "opendeck.prevpage",
+						"tooltip": "Switch to the previous page (wraps around)",
+						"controllers": [ "Keypad" ],
+						"states": [ { "image": "opendeck/previous-page.svg" } ],
+						"supported_in_multi_actions": false
+					}
+				))
+				.unwrap(),
+				serde_json::from_value(serde_json::json!(
+					{
+						"name": "Go to Page",
+						"icon": "opendeck/go-to-page.svg",
+						"plugin": "opendeck",
+						"uuid": "opendeck.gotopage",
+						"tooltip": "Switch to a specific page",
+						"controllers": [ "Keypad" ],
+						"states": [ { "image": "opendeck/go-to-page.svg" } ],
+						"supported_in_multi_actions": false
+					}
+				))
+				.unwrap(),
 			],
 		},
 	);

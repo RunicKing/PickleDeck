@@ -339,6 +339,28 @@ pub async fn set_keylogic_double(parent_context: ActionContext, double_ms: u64) 
 }
 
 #[command]
+pub async fn set_gotopage_page(app: AppHandle, context: ActionContext, page: u8) -> Result<serde_json::Value, Error> {
+	let mut locks = acquire_locks_mut().await;
+	let Some(instance) = get_instance_mut(&context, &mut locks).await? else {
+		return Ok(serde_json::Value::Null);
+	};
+	if instance.action.uuid != "opendeck.gotopage" {
+		return Ok(instance.settings.clone());
+	}
+	if !instance.settings.is_object() {
+		instance.settings = serde_json::Value::Object(serde_json::Map::new());
+	}
+	let map = instance.settings.as_object_mut().unwrap();
+	map.insert("page".to_string(), serde_json::json!(page));
+	let settings = instance.settings.clone();
+
+	let device = context.device.clone();
+	update_state(&app, context, &mut locks).await?;
+	save_profile_now(&device, &mut locks).await?;
+	Ok(settings)
+}
+
+#[command]
 pub async fn update_image(context: Context, image: Option<String>) {
 	if Some(&context.profile) != crate::store::profiles::DEVICE_STORES.write().await.get_selected_profile(&context.device).ok().as_ref() {
 		return;

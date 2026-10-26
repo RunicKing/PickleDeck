@@ -87,6 +87,7 @@ async fn main() {
 			frontend::instances::set_child_delay,
 			frontend::instances::set_keylogic_hold,
 			frontend::instances::set_keylogic_double,
+			frontend::instances::set_gotopage_page,
 			frontend::instances::update_image,
 			frontend::instances::trigger_virtual_press,
 			frontend::profiles::get_profiles,

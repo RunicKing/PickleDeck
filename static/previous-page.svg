@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144">
+	<!-- Previous Page tile. Glyph: Material Symbols "arrow_back" (Apache 2.0, google/material-design-icons) -->
+	<rect x="0" y="0" width="144" height="144" rx="22" fill="#0f0f10"/>
+	<g transform="translate(6 138) scale(0.1375)">
+		<path fill="#ffffff" d="m502-240-240-240 240-240 58 58-142 142h484v80H418l142 142-58 58Z"/>
+	</g>
+</svg>

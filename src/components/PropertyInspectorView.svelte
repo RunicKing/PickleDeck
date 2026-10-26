@@ -178,6 +178,19 @@
 			inspectedIframe.src += "";
 		}
 	});
+
+	// Built-in page navigation actions have no plugin property inspector; a small local editor
+	// stands in for them (Go to Page needs a target-page picker).
+	const PAGE_ACTIONS = ["opendeck.nextpage", "opendeck.prevpage", "opendeck.gotopage"];
+	function pageActionUuid(instance?: ActionInstance): string | undefined {
+		return instance && PAGE_ACTIONS.includes(instance.action.uuid) ? instance.action.uuid : undefined;
+	}
+	async function setGoToPageTarget(value: string) {
+		if (!inspectedInst) return;
+		const response = await invoke<any>("set_gotopage_page", { context: inspectedInst.context, page: Number(value) });
+		const slot = profile.keys.find((k) => k?.context == inspectedInst!.context);
+		if (slot) slot.settings = response;
+	}
 </script>
 
 <svelte:window
@@ -197,7 +210,24 @@
 		✕
 	</button>
 	{#key $inspectedInstance}
-		{#if inspectedInst?.action.property_inspector}
+		{#if pageActionUuid(inspectedInst)}
+			<div class="w-full p-3 space-y-2">
+				{#if inspectedInst.action.uuid == "opendeck.gotopage"}
+					<label class="block text-xs text-neutral-400" for="gotopage-target">{$t("page_action.target")}</label>
+					<select
+						id="gotopage-target"
+						class="w-40 bg-neutral-900 text-neutral-200 border border-neutral-600 rounded px-2 py-1"
+						on:change={(event) => setGoToPageTarget(event.currentTarget.value)}
+					>
+						{#each Array(profile.pages) as _, index}
+							<option value={index} selected={Number(inspectedInst.settings?.page ?? -1) == index}>{$t("page_action.page", { page: index + 1 })}</option>
+						{/each}
+					</select>
+				{:else}
+					<p class="text-sm text-neutral-300">{$t(inspectedInst.action.uuid == "opendeck.nextpage" ? "page_action.next.info" : "page_action.prev.info")}</p>
+				{/if}
+			</div>
+		{:else if inspectedInst?.action.property_inspector}
 			<iframe
 				title={$t("property_inspector.title")}
 				class="w-full h-full block"

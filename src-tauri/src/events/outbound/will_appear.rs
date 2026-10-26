@@ -12,6 +12,12 @@ struct AppearEvent {
 }
 
 pub async fn will_appear(instance: &ActionInstance) -> Result<(), anyhow::Error> {
+	// Built-in actions (Multi Action, Toggle Action, Key Logic and the page actions) have
+	// plugin uuid "opendeck" with no plugin process behind it; never dispatch to it.
+	if instance.action.plugin == "opendeck" {
+		return Ok(());
+	}
+
 	send_to_plugin(
 		&instance.action.plugin,
 		&AppearEvent {
@@ -30,17 +36,19 @@ pub async fn will_appear(instance: &ActionInstance) -> Result<(), anyhow::Error>
 }
 
 pub async fn will_disappear(instance: &ActionInstance, clear_on_device: bool) -> Result<(), anyhow::Error> {
-	send_to_plugin(
-		&instance.action.plugin,
-		&AppearEvent {
-			event: "willDisappear",
-			action: instance.action.uuid.clone(),
-			context: instance.context.clone(),
-			device: instance.context.device.clone(),
-			payload: GenericInstancePayload::new(instance),
-		},
-	)
-	.await?;
+	if instance.action.plugin != "opendeck" {
+		send_to_plugin(
+			&instance.action.plugin,
+			&AppearEvent {
+				event: "willDisappear",
+				action: instance.action.uuid.clone(),
+				context: instance.context.clone(),
+				device: instance.context.device.clone(),
+				payload: GenericInstancePayload::new(instance),
+			},
+		)
+		.await?;
+	}
 
 	if clear_on_device && let Err(error) = crate::events::outbound::devices::update_image((&instance.context).into(), None).await {
 		log::warn!("Failed to clear device image: {}", error);

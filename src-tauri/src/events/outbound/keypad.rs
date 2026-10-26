@@ -24,6 +24,47 @@ static KEY_HOLD_SEQ: AtomicU64 = AtomicU64::new(0);
 const KEYLOGIC_DEFAULT_HOLD: u64 = 500;
 const KEYLOGIC_DEFAULT_DOUBLE: u64 = 275;
 
+const PAGE_ACTIONS: [&str; 3] = ["opendeck.nextpage", "opendeck.prevpage", "opendeck.gotopage"];
+
+/// Handles the built-in page navigation actions (Next/Previous/Go to Page): resolves the
+/// target page against the current profile and runs the standard page switch flow.
+async fn trigger_page_change(device: &str, uuid: &str, page: Option<u8>) -> Result<(), anyhow::Error> {
+	let mut locks = acquire_locks_mut().await;
+	if !crate::shared::DEVICES.contains_key(device) {
+		return Ok(());
+	}
+	let profile_id = locks.device_stores.get_selected_profile(device)?;
+	let page_count = {
+		let store = locks
+			.profile_stores
+			.get_profile_store(&crate::shared::DEVICES.get(device).unwrap(), &profile_id)?;
+		store.value.pages.len()
+	} as u32;
+	if page_count == 0 {
+		return Ok(());
+	}
+	let current = crate::shared::DEVICES.get(device).unwrap().current_page as u32;
+
+	let target = match uuid {
+		"opendeck.nextpage" => (current + 1) % page_count,
+		"opendeck.prevpage" => (current + page_count - 1) % page_count,
+		// Unset target defaults to page 1; a target pointing outside the profile (e.g. after
+		// page count changes) does nothing.
+		_ => {
+			let target = page.map(|page| page as u32).unwrap_or(0);
+			if target >= page_count {
+				log::debug!("Go to Page target {} out of range ({} pages)", target, page_count);
+				return Ok(());
+			}
+			target
+		}
+	};
+
+	crate::events::frontend::profiles::set_page_flow(crate::APP_HANDLE.get().unwrap(), device, target as usize, &mut locks)
+		.await?;
+	Ok(())
+}
+
 /// Fires one branch of a keylogic instance: index 0 = single press, 1 = double press, 2 = long press.
 /// Mirrors the multiaction child dispatch plus its automatic state cycling.
 /// Runs without holding the profile locks across the plugin round-trip.
@@ -183,8 +224,13 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 		}
 
 		mark_profile_stale(device, &mut locks).await?;
-	} else if instance.action.uuid == "opendeck.toggleaction" {
-		let children = instance.children.as_ref().unwrap();
+	} else if PAGE_ACTIONS.contains(&instance.action.uuid.as_str()) {
+		let uuid = instance.action.uuid.clone();
+		let page = instance.settings.get("page").and_then(|v| v.as_u64()).map(|v| v as u8);
+		drop(locks);
+		trigger_page_change(device, &uuid, page).await?;
+		return Ok(());
+	} else if instance.action.uuid == "opendeck.toggleaction" {		let children = instance.children.as_ref().unwrap();
 		if children.is_empty() {
 			return Ok(());
 		}
@@ -304,6 +350,11 @@ pub async fn key_up(device: &str, key: u8) -> Result<(), anyhow::Error> {
 			}
 		}
 		// no hold entry means the long-press timer already fired the long branch
+		return Ok(());
+	}
+
+	// Built-in page actions have no plugin process; skip the plugin keyUp dispatch.
+	if slot_uuid.as_deref().is_some_and(|uuid| PAGE_ACTIONS.contains(&uuid)) {
 		return Ok(());
 	}
 

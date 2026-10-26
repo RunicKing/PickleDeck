@@ -91,15 +91,15 @@ async fn appear_page(device: &str, profile_id: &str, page_index: usize, locks: &
 	Ok(())
 }
 
-/// Mounts the given page of the selected profile: willDisappear → clear screen →
+/// Mounts the given page of the selected profile: willDisappear → swap screen →
 /// switch → willAppear → persistence; emits `switch_page` to the frontend.
-async fn set_page_flow(app: &AppHandle, device: &str, page: usize, locks: &mut LocksMut<'_>) -> Result<(), Error> {
+pub(crate) async fn set_page_flow(app: &AppHandle, device: &str, page: usize, locks: &mut LocksMut<'_>) -> Result<(), Error> {
 	let profile_id = locks.device_stores.get_selected_profile(device)?;
 
 	disappear_current_page(device, &profile_id, locks).await?;
-	let _ = crate::events::outbound::devices::clear_screen(device.to_owned()).await;
 
 	DEVICES.get_mut(device).unwrap().current_page = page as u8;
+	let _ = crate::elgato::restore_or_clear_screen(device, &profile_id, page as u8);
 	locks.device_stores.set_selected_page(device, page as u8)?;
 
 	appear_page(device, &profile_id, page, locks).await?;
@@ -131,11 +131,11 @@ pub async fn set_selected_profile(device: String, id: String) -> Result<(), Erro
 
 	if selected_profile != id {
 		disappear_current_page(&device, &selected_profile, &mut locks).await?;
-		let _ = crate::events::outbound::devices::clear_screen(device.clone()).await;
 
 		// Profile switches always reset to the first page of the new profile. Re-selecting the
 		// current profile (frontend init) keeps the device's restored page selection.
 		DEVICES.get_mut(&device).unwrap().current_page = 0;
+		let _ = crate::elgato::restore_or_clear_screen(&device, &id, 0);
 		locks.device_stores.set_selected_page(&device, 0)?;
 
 		appear_page(&device, &id, 0, &mut locks).await?;
@@ -211,6 +211,9 @@ pub async fn remove_page(app: AppHandle, device: String, page: u8) -> Result<(),
 	let profile_id = locks.device_stores.get_selected_profile(&device)?;
 	let current = DEVICES.get(&device).unwrap().current_page as usize;
 
+	// Page indices shift after removal; drop the profile's cached screens entirely.
+	crate::elgato::invalidate_profile_screens(&device, &profile_id);
+
 	// If the mounted page is being removed, send willDisappear for it first
 	if page as usize == current {
 		disappear_current_page(&device, &profile_id, &mut locks).await?;
@@ -258,6 +261,7 @@ pub async fn remove_page(app: AppHandle, device: String, page: u8) -> Result<(),
 
 #[command]
 pub async fn delete_profile(device: String, profile: String) {
+	crate::elgato::invalidate_profile_screens(&device, &profile);
 	let mut profile_stores = PROFILE_STORES.write().await;
 	profile_stores.delete_profile(&device, &profile);
 }
