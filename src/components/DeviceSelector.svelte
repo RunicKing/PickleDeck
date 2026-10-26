@@ -60,9 +60,16 @@
 			const idealWidth = effectiveCols * 132 + 416;
 			const idealHeight = effectiveRows * 132 + 384 + (buildInfo?.split("</summary>")[0]?.includes("darwin") ? 28 : 0);
 			(async () => {
+				// Query state BEFORE any window mutation: setMinSize clears the
+				// maximized flag on Windows, so checking after it would miss the
+				// maximized state and let setSize un-maximize the window.
+				if (await window.isMaximized() || (await window.isFullscreen())) return;
 				const width = Math.min(idealWidth, screen.availWidth);
 				const height = Math.min(idealHeight, screen.availHeight);
 				await window.setMinSize(new LogicalSize(width, height));
+				const outer = await window.outerSize();
+				const scale = await window.scaleFactor();
+				if (Math.abs(outer.width / scale - width) < 1 && Math.abs(outer.height / scale - height) < 1) return;
 				await window.setSize(new LogicalSize(width, height));
 			})();
 		}

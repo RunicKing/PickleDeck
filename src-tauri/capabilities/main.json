@@ -2,5 +2,5 @@
 	"identifier": "main",
 	"local": true,
 	"windows": ["main"],
-	"permissions": ["core:default", "core:window:allow-set-min-size", "core:window:allow-set-size", "dialog:default", "deep-link:default"]
+	"permissions": ["core:default", "core:window:allow-set-min-size", "core:window:allow-set-size", "core:window:allow-is-maximized", "core:window:allow-is-fullscreen", "core:window:allow-outer-size", "core:window:allow-scale-factor", "log:default", "dialog:default", "deep-link:default"]
 }
