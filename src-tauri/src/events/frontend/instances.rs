@@ -260,12 +260,15 @@ pub async fn update_state(app: &AppHandle, context: ActionContext, locks: &mut L
 }
 
 #[command]
-pub async fn set_state(context: ActionContext, index: u16, state: ActionState) -> Result<(), Error> {
+pub async fn set_state(app: AppHandle, context: ActionContext, index: u16, state: ActionState) -> Result<(), Error> {
 	let mut locks = acquire_locks_mut().await;
 	let reference = get_instance_mut(&context, &mut locks).await?.unwrap();
 	reference.states[index as usize] = state;
 	let clone = reference.clone();
-	save_profile_now(&context.device, &mut locks).await?;
+	// Re-emit to the frontend so a repaint of this slot (with the edit) reaches the device.
+	update_state(&app, context.clone(), &mut locks).await?;
+	let device = context.device.clone();
+	save_profile_now(&device, &mut locks).await?;
 	crate::events::outbound::states::title_parameters_did_change(&clone, index).await?;
 	Ok(())
 }

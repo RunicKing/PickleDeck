@@ -52,7 +52,17 @@
 		italic = instance.states[state].style.includes("Italic");
 	}
 	$: update(instance);
-	$: invoke("set_state", { context: instance.context, index: state, state: instance.states[state] });
+	// Only send edits that changed content: the backend echoes this slot back via
+	// update_state (to repaint the device), so an identity-only change must not be
+	// re-sent or the echo loop would spin save+emit on every keystroke.
+	let lastStateSent = "";
+	$: {
+		const serialized = JSON.stringify(instance.states[state]);
+		if (serialized != lastStateSent) {
+			lastStateSent = serialized;
+			invoke("set_state", { context: instance.context, index: state, state: instance.states[state] });
+		}
+	}
 
 	let canvas: HTMLCanvasElement;
 	$: renderImage(canvas, null, instance.states[state], instance.action.states[state]?.image ?? instance.action.icon, false, false, true, false, false, 0);
