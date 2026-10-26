@@ -10,7 +10,6 @@
 	import { invoke } from "@tauri-apps/api/core";
 	import { listen } from "@tauri-apps/api/event";
 
-	let iframes: { [context: string]: HTMLIFrameElement } = {};
 	let iframeContainer: HTMLDivElement;
 	let iframeClosePopup: HTMLButtonElement;
 	let iframePopupsOpen: string[] = [];
@@ -19,7 +18,7 @@
 	export let profile: Profile;
 
 	async function iframeOnLoad(event: Event, instance: ActionInstance) {
-		const iframe = iframes[instance.context] ?? event.target;
+		const iframe = event.target;
 		const split = instance.context.split(".");
 
 		const position = parseInt(split[3]);
@@ -60,14 +59,14 @@
 	}
 
 	const closePopup = (context: string) => {
-		const iframe = iframes[context];
+		const iframe = inspectedInst && inspectedInst.context == context ? inspectedIframe : null;
 		if (iframe) {
 			iframe.style.position = "";
 			iframe.style.left = "";
 			iframe.style.top = "";
 			iframe.style.width = "100%";
 			iframe.style.height = "100%";
-			iframe.style.display = $inspectedInstance == context ? "block" : "none";
+			iframe.style.display = "block";
 			iframe.contentWindow?.postMessage({ event: "windowClosed" }, getWebserverUrl());
 		}
 
@@ -87,7 +86,7 @@
 
 	window.addEventListener("message", ({ data }) => {
 		if (data.event == "windowOpened") {
-			const iframe = iframes[data.payload];
+			const iframe = inspectedIframe;
 			iframe.style.position = "absolute";
 			iframe.style.left = "36px";
 			iframe.style.top = "36px";
@@ -138,7 +137,7 @@
 					}
 					const body = combineUint8Arrays(chunks);
 
-					iframes[data.payload.context]?.contentWindow?.postMessage(
+					inspectedIframe?.contentWindow?.postMessage(
 						{
 							event: "fetchResponse",
 							payload: {
@@ -156,7 +155,7 @@
 					);
 				})
 				.catch((error: any) => {
-					iframes[data.payload.context]?.contentWindow?.postMessage({ event: "fetchError", payload: { id: data.payload.id, error } }, getWebserverUrl());
+					inspectedIframe?.contentWindow?.postMessage({ event: "fetchError", payload: { id: data.payload.id, error } }, getWebserverUrl());
 				});
 		}
 	});
@@ -168,14 +167,15 @@
 		.concat(profile.sliders.filter(nonNull))
 		.concat(profile.infobars.filter(nonNull));
 
+	// Only the inspected instance's property inspector is instantiated; loading every plugin's
+	// PI at once let idle PI scripts (polling, reconnects) burn CPU inside the main renderer.
+	let inspectedInst: ActionInstance | undefined;
+	$: inspectedInst = instances.find((i) => i.context == $inspectedInstance);
+	let inspectedIframe: HTMLIFrameElement;
+
 	listen("plugin_reloaded", ({ payload }: { payload: string }) => {
-		for (const instance of instances) {
-			if (instance.action.plugin == payload && iframes[instance.context]) {
-				iframes[instance.context].src += "";
-				if ($inspectedInstance == instance.context) {
-					invoke("switch_property_inspector", { new: instance.context });
-				}
-			}
+		if (inspectedInst?.action.plugin == payload && inspectedIframe) {
+			inspectedIframe.src += "";
 		}
 	});
 </script>
@@ -196,17 +196,16 @@
 	>
 		✕
 	</button>
-	{#each instances as instance (instance.context)}
-		{#if instance.action.property_inspector}
+	{#key $inspectedInstance}
+		{#if inspectedInst?.action.property_inspector}
 			<iframe
 				title={$t("property_inspector.title")}
-				class="w-full h-full hidden"
-				class:block!={$inspectedInstance == instance.context}
-				src={getWebserverUrl(instance.action.property_inspector + "|opendeck_property_inspector")}
-				name={instance.context}
-				bind:this={iframes[instance.context]}
-				on:load={(event) => iframeOnLoad(event, instance)}
+				class="w-full h-full block"
+				src={getWebserverUrl(inspectedInst.action.property_inspector + "|opendeck_property_inspector")}
+				name={inspectedInst.context}
+				bind:this={inspectedIframe}
+				on:load={(event) => iframeOnLoad(event, inspectedInst)}
 			/>
 		{/if}
-	{/each}
+	{/key}
 </div>

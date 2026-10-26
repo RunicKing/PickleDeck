@@ -31,18 +31,19 @@ pub async fn register_device(uuid: &str, mut event: PayloadEvent<crate::shared::
 		let selected_profile = locks.device_stores.get_selected_profile(&event.payload.id)?;
 		let profile = locks.profile_stores.get_profile_store(&DEVICES.get(&event.payload.id).unwrap(), &selected_profile)?;
 		let page_index = (event.payload.current_page as usize).min(profile.value.pages.len().saturating_sub(1));
-		for instance in profile
-			.value
-			.pages
-			.get(page_index)
-			.map(|p| p.keys.iter())
-			.unwrap_or_default()
-			.flatten()
-			.chain(profile.value.pages.get(page_index).map(|p| p.sliders.iter()).unwrap_or_default().flatten())
-			.chain(profile.value.pages.get(page_index).map(|p| p.infobars.iter()).unwrap_or_default().flatten())
-		{
-			let _ = crate::events::outbound::will_appear::will_appear(instance).await;
-		}
+		crate::events::frontend::profiles::dispatch_slots(
+			profile
+				.value
+				.pages
+				.get(page_index)
+				.map(|p| p.keys.iter())
+				.unwrap_or_default()
+				.flatten()
+				.chain(profile.value.pages.get(page_index).map(|p| p.sliders.iter()).unwrap_or_default().flatten())
+				.chain(profile.value.pages.get(page_index).map(|p| p.infobars.iter()).unwrap_or_default().flatten()),
+			true,
+		)
+		.await;
 
 		use tauri_plugin_aptabase::EventTracker;
 		let _ = crate::APP_HANDLE

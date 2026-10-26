@@ -41,7 +41,7 @@ pub async fn get_selected_profile(device: String) -> Result<crate::shared::Profi
 
 /// The willDisappear / willAppear special-casing shared by profile and page switching:
 /// parent actions (multi action, toggle action, key logic) only dispatch their children.
-async fn dispatch_slots(slots: impl Iterator<Item = &crate::shared::ActionInstance>, appear: bool) {
+pub(crate) async fn dispatch_slots(slots: impl Iterator<Item = &crate::shared::ActionInstance>, appear: bool) {
 	for instance in slots {
 		let is_parent = matches!(instance.action.uuid.as_str(), "opendeck.multiaction" | "opendeck.toggleaction" | "opendeck.keylogic");
 		if appear {

@@ -73,13 +73,19 @@ async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: u
 	.await?;
 
 	// Cycle the fired child's automatic state and refresh the UI.
+	// NOTE: unlike the plain dispatch paths we cycle even when the child sets
+	// disable_automatic_states, because some plugins only report setState feedback
+	// for one registered context per action uuid; keylogic children then never
+	// receive state updates from the plugin and every press would repeat the
+	// same action (e.g. mute without unmute). Alternating the state here gives
+	// the plugin the toggle signal it derives from the payload state.
 	let mut locks = acquire_locks_mut().await;
 	let refreshed: Option<crate::shared::ActionContext> = match get_slot_mut(&context, &mut locks).await? {
 		Some(instance) if instance.action.uuid == "opendeck.keylogic" => {
 			instance.children.as_mut().and_then(|children| {
 				let child = children.iter_mut().find(|c| c.context.index as usize == index)?;
-				if child.states.len() == 2 && !child.action.disable_automatic_states {
-					child.current_state = (child.current_state + 1) % (child.states.len() as u16);
+				if child.states.len() == 2 {
+					child.current_state = (child.current_state + 1) % 2;
 				}
 				Some(child.context.clone())
 			})
