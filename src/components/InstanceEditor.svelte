@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ActionInstance } from "$lib/ActionInstance";
+	import { EMOJI_GROUPS } from "$lib/emojiList";
 
 	import { t } from "$lib/i18n";
 	import { renderImage, resizeImage } from "$lib/rendererHelper";
@@ -25,16 +26,20 @@
 
 	let textInput: HTMLTextAreaElement;
 	let showEmojiPicker = false;
-	// Enough everyday emoji to cover most button-title use; the textarea itself accepts anything else.
-	const EMOJIS = [
-		"😀","😆","😅","😂","🥹","😊","😍","🤩","😘","😎","🤔","🥳","😴","😭","😡","🤯",
-		"🥰","😇","🙃","😱","🤗","🤫","🫡","🤤","😷","🤒","🥺","😤","🤠","🤪","🧐","😬",
-		"👍","👎","👌","🤝","🙏","👏","💪","🫶","✌️","🤞","👋","🫡","🖐️","✊","☝️","🤙",
-		"❤️","🧡","💛","💚","💙","💜","🖤","🤍","💯","✨","⚡","🔥","💥","💫","⭐","🌟",
-		"✅","❌","❓","❗","💬","💤","📝","📌","📎","🔒","🔑","⚠️","🚫","🔄","➡️","⬅️",
-		"⏰","📅","📞","✉️","🎮","🎧","🎬","📷","🖥️","💡","🚀","🏁","🏆","🎯","🎉","🎁",
-		"🍕","🍔","☕","🍺","🎂","🧠","👀","🤖","🌈","☀️","🌙","☁️","❄️","🌊","🍀","🌸",
-	];
+	// Full Unicode 15.1 set (generated from emoji-test.txt), browsable by category tab.
+	let emojiGroup = 0;
+	// Tab icons per group name; fallback to the group's first glyph if a name is added later.
+	const EMOJI_TAB_ICONS: Record<string, string> = {
+		"Smileys & Emotion": "😀",
+		"People & Body": "🖐️",
+		"Animals & Nature": "🐻",
+		"Food & Drink": "🍔",
+		"Activities": "⚽",
+		"Travel & Places": "🚗",
+		"Objects": "💡",
+		"Symbols": "✅",
+		"Flags": "🏁",
+	};
 
 	function insertEmoji(emoji: string) {
 		// Assign through the reactive chain (instance.states[state], not an alias): Svelte only
@@ -300,12 +305,27 @@
 				</div>
 			</div>
 			{#if showEmojiPicker}
-				<div class="grid max-h-36 grid-cols-16 gap-1 overflow-y-auto p-2 bg-neutral-800 border border-neutral-600 rounded-lg">
-					{#each EMOJIS as emoji}
-						<button type="button" class="px-1 py-0.5 text-lg rounded hover:bg-neutral-600 transition-colors" on:click={() => insertEmoji(emoji)}>
-							{emoji}
-						</button>
-					{/each}
+				<div class="p-2 bg-neutral-800 border border-neutral-600 rounded-lg">
+					<div class="flex flex-row gap-1 mb-1 overflow-x-auto">
+						{#each EMOJI_GROUPS as group, gi}
+							<button
+								type="button"
+								class={`px-1.5 py-0.5 text-base rounded shrink-0 transition-colors ${emojiGroup == gi ? "bg-neutral-500" : "bg-neutral-700 hover:bg-neutral-600"}`}
+								title={group.name}
+								aria-label={group.name}
+								on:click={() => (emojiGroup = gi)}
+							>
+								{EMOJI_TAB_ICONS[group.name] ?? group.emojis[0]}
+							</button>
+						{/each}
+					</div>
+					<div class="grid max-h-44 grid-cols-16 gap-1 overflow-y-auto">
+						{#each EMOJI_GROUPS[emojiGroup].emojis as emoji}
+							<button type="button" class="px-1 py-0.5 text-lg rounded hover:bg-neutral-600 transition-colors" on:click={() => insertEmoji(emoji)}>
+								{emoji}
+							</button>
+						{/each}
+					</div>
 				</div>
 			{/if}
 			<div class="flex flex-row items-center">
