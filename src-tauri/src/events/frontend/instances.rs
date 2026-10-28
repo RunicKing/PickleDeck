@@ -22,11 +22,13 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 	if let Some(parent) = slot {
 		let Some(children) = &mut parent.children else { return Ok(None) };
 		let index = if parent.action.uuid == "opendeck.keylogic" {
-			// Key logic has three fixed branches; honour a requested slot, otherwise the first free one.
+			// Key logic has three fixed branches; honour a requested slot, otherwise the first
+			// free one. Child contexts use index = branch + 1 (single/double/long = 1/2/3) so a
+			// child never collides with the parent's own index 0.
 			let used = children.iter().map(|c| c.context.index).collect::<std::collections::BTreeSet<_>>();
 			match slot_index {
-				Some(slot) if slot < 3 && !used.contains(&slot) => slot,
-				_ => match (0u16..3).find(|i| !used.contains(i)) {
+				Some(slot) if slot < 3 && !used.contains(&(slot + 1)) => slot + 1,
+				_ => match (1u16..=3).find(|i| !used.contains(i)) {
 					Some(index) => index,
 					None => return Ok(None),
 				},

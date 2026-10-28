@@ -43,8 +43,10 @@
 					? $t("parent_action_view.long")
 					: $t("parent_action_view.extra");
 
-	// Key Logic: exactly three fixed branch slots, identified by each child's context index (last context segment).
-	$: keylogicSlots = [0, 1, 2].map((slot) => children.find((child) => Number(child.context.split(".").at(-1)) == slot) ?? null);
+	// Key Logic: exactly three fixed branch slots, identified by each child's context index
+	// (second-to-last context segment; index = branch + 1 so children never collide with the
+	// parent's own index 0).
+	$: keylogicSlots = [0, 1, 2].map((slot) => children.find((child) => Number(child.context.split(".").at(-2)) == slot + 1) ?? null);
 
 	// Duplicate: pasted/at-slot create refreshes the whole parent row from the response.
 	function handleSlotDrop({ dataTransfer }: DragEvent, slot: number) {

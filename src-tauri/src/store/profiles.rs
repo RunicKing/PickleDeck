@@ -61,12 +61,14 @@ impl ProfileStores {
 						} else if let Some(children) = &mut instance.children {
 							children.retain_mut(|child| keep_instance(child));
 
-							// Migrate legacy Key Logic branch numbering: old instances numbered
-							// children by array position + 1; branch identity is now the child's
-							// own context index (0 = single press, 1 = double, 2 = long).
+							// Renumber Key Logic branches by array position on every load: child
+							// contexts use index = branch + 1 (single/double/long = 1/2/3) so a
+							// child context never collides with the parent's own index 0 — the
+							// collision made remove_instance delete the whole parent when the
+							// single-press child was targeted. Also migrates legacy numbering.
 							if instance.action.uuid == "opendeck.keylogic" {
 								for (position, child) in children.iter_mut().enumerate() {
-									child.context.index = position as u16;
+									child.context.index = position as u16 + 1;
 								}
 							}
 						}
