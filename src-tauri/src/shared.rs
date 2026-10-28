@@ -364,12 +364,17 @@ pub struct TriggerDescription {
 }
 
 /// Location metadata of a slot.
+#[serde_inline_default]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Context {
 	pub device: String,
 	pub profile: String,
 	pub controller: String,
 	pub position: u8,
+	// Page the slot sits on: part of the identity so two pages can hold different
+	// actions at the same position without colliding on context strings.
+	#[serde_inline_default(0)]
+	pub page: u8,
 }
 
 /// Information about the slot and index an instance is located in.
@@ -380,11 +385,12 @@ pub struct ActionContext {
 	pub controller: String,
 	pub position: u8,
 	pub index: u16,
+	pub page: u8,
 }
 
 impl std::fmt::Display for ActionContext {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}.{}.{}.{}.{}", self.device, self.profile, self.controller, self.position, self.index)
+		write!(f, "{}.{}.{}.{}.{}.{}", self.device, self.profile, self.controller, self.position, self.index, self.page)
 	}
 }
 
@@ -400,12 +406,16 @@ impl std::str::FromStr for ActionContext {
 		let controller = segments[2].to_owned();
 		let position = u8::from_str(segments[3])?;
 		let index = u16::from_str(segments[4])?;
+		// Legacy 5-segment context strings (pre page-aware contexts, or still in flight
+		// from plugins across an upgrade) resolve to page 0.
+		let page = if segments.len() >= 6 { u8::from_str(segments[5])? } else { 0 };
 		Ok(Self {
 			device,
 			profile,
 			controller,
 			position,
 			index,
+			page,
 		})
 	}
 }
@@ -417,6 +427,7 @@ impl ActionContext {
 			profile: context.profile,
 			controller: context.controller,
 			position: context.position,
+			page: context.page,
 			index,
 		}
 	}
@@ -429,6 +440,7 @@ impl From<ActionContext> for Context {
 			profile: value.profile,
 			controller: value.controller,
 			position: value.position,
+			page: value.page,
 		}
 	}
 }

@@ -49,13 +49,14 @@ impl From<ActionContext> for DiskActionContext {
 }
 
 impl DiskActionContext {
-	fn into_action_context(self, device: String, profile: String) -> ActionContext {
+	fn into_action_context(self, device: String, profile: String, page: u8) -> ActionContext {
 		ActionContext {
 			device,
 			profile,
 			controller: self.controller,
 			position: self.position,
 			index: self.index,
+			page,
 		}
 	}
 }
@@ -203,7 +204,7 @@ impl DiskActionInstance {
 		action.property_inspector = reconstruct_path(&action.property_inspector);
 
 		ActionInstance {
-			context: self.context.into_action_context(device, profile),
+			context: self.context.into_action_context(device, profile, self.page),
 			action,
 			states,
 			current_state: self.current_state,

@@ -121,7 +121,7 @@
 		if (!$copiedItem || !context || !handlePaste) return;
 		await handlePaste($copiedItem, context);
 		await tick();
-		$inspectedInstance = `${context.device}.${context.profile}.${context.controller}.${context.position}.0`;
+		$inspectedInstance = `${context.device}.${context.profile}.${context.controller}.${context.position}.0.${context.page}`;
 	}
 
 	async function clear() {

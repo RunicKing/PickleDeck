@@ -114,7 +114,7 @@
 	// `instance` wholesale (new object), while local typing reassigns the same object, so
 	// comparing identity leaves the guard free to fire on keystrokes and still lets a
 	// stale echo die instead of bouncing back into another (send-echo) loop iteration.
-	let lastInstance = null;
+	let lastInstance: ActionInstance | null = null;
 	$: if (instance !== lastInstance) {
 		lastInstance = instance;
 		lastStateSent = JSON.stringify(instance.states[state]);

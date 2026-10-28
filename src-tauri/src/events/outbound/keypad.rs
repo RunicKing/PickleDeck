@@ -71,6 +71,7 @@ async fn trigger_page_change(device: &str, uuid: &str, page: Option<u8>) -> Resu
 async fn fire_keylogic_branch(device: String, key: u8, profile: String, index: usize) -> Result<(), anyhow::Error> {
 	let mut locks = acquire_locks_mut().await;
 	let context = Context {
+		page: crate::shared::DEVICES.get(&device).map(|device| device.current_page).unwrap_or(0),
 		device: device.clone(),
 		profile: profile.clone(),
 		controller: "Keypad".to_owned(),
@@ -153,6 +154,7 @@ pub async fn key_down(device: &str, key: u8) -> Result<(), anyhow::Error> {
 	let mut locks = acquire_locks_mut().await;
 	let selected_profile = locks.device_stores.get_selected_profile(device)?;
 	let context = Context {
+		page: crate::shared::DEVICES.get(device).map(|device| device.current_page).unwrap_or(0),
 		device: device.to_owned(),
 		profile: selected_profile.to_owned(),
 		controller: "Keypad".to_owned(),
@@ -299,6 +301,7 @@ pub async fn key_up(device: &str, key: u8) -> Result<(), anyhow::Error> {
 	let mut locks = acquire_locks_mut().await;
 	let selected_profile = locks.device_stores.get_selected_profile(device)?;
 	let context = Context {
+		page: crate::shared::DEVICES.get(device).map(|device| device.current_page).unwrap_or(0),
 		device: device.to_owned(),
 		profile: selected_profile.to_owned(),
 		controller: "Keypad".to_owned(),

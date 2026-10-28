@@ -3,4 +3,5 @@ export type Context = {
 	profile: string;
 	controller: string;
 	position: number;
+	page: number;
 };

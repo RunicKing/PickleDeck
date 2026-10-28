@@ -27,6 +27,7 @@ pub async fn dial_rotate(device: &str, index: u8, ticks: i16) -> Result<(), anyh
 	let mut locks = acquire_locks_mut().await;
 	let selected_profile = locks.device_stores.get_selected_profile(device)?;
 	let context = ActionContext {
+		page: crate::shared::DEVICES.get(device).map(|device| device.current_page).unwrap_or(0),
 		device: device.to_owned(),
 		profile: selected_profile.to_owned(),
 		controller: "Encoder".to_owned(),
@@ -74,6 +75,7 @@ pub async fn dial_press(device: &str, event: &'static str, index: u8) -> Result<
 	let mut locks = acquire_locks_mut().await;
 	let selected_profile = locks.device_stores.get_selected_profile(device)?;
 	let context = ActionContext {
+		page: crate::shared::DEVICES.get(device).map(|device| device.current_page).unwrap_or(0),
 		device: device.to_owned(),
 		profile: selected_profile.to_owned(),
 		controller: "Encoder".to_owned(),
@@ -123,6 +125,7 @@ pub async fn touch_tap(device: &str, index: u8, x: u16, y: u16, hold: bool) -> R
 	let mut locks = acquire_locks_mut().await;
 	let selected_profile = locks.device_stores.get_selected_profile(device)?;
 	let context = ActionContext {
+		page: crate::shared::DEVICES.get(device).map(|device| device.current_page).unwrap_or(0),
 		device: device.to_owned(),
 		profile: selected_profile.to_owned(),
 		controller: "Encoder".to_owned(),

@@ -360,8 +360,8 @@ pub async fn get_slot<'a>(context: &crate::shared::Context, locks: &'a Locks<'_>
 	let device = DEVICES.get(&context.device).ok_or_else(|| anyhow!("device not found"))?;
 	let store = locks.profile_stores.get_profile_store(&device, &context.profile)?;
 
-	// Resolve the device's current page, clamped into the profile's page range.
-	let page = store.value.pages.get(device.current_page as usize).or_else(|| store.value.pages.first()).ok_or_else(|| anyhow!("profile has no pages"))?;
+	// The page is part of the context identity, clamped into the profile's page range.
+	let page = store.value.pages.get(context.page as usize).or_else(|| store.value.pages.first()).ok_or_else(|| anyhow!("profile has no pages"))?;
 
 	let configured = match &context.controller[..] {
 		"Encoder" => page.sliders.get(context.position as usize).ok_or_else(|| anyhow!("index out of bounds"))?,
@@ -376,8 +376,8 @@ pub async fn get_slot_mut<'a>(context: &crate::shared::Context, locks: &'a mut L
 	let device = DEVICES.get(&context.device).ok_or_else(|| anyhow!("device not found"))?;
 	let store = locks.profile_stores.get_profile_store_mut(&device, &context.profile).await?;
 
-	// Resolve the device's current page, clamped into the profile's page range.
-	let page_index = (device.current_page as usize).min(store.value.pages.len().saturating_sub(1));
+	// The page is part of the context identity, clamped into the profile's page range.
+	let page_index = (context.page as usize).min(store.value.pages.len().saturating_sub(1));
 	let page = store.value.pages.get_mut(page_index).ok_or_else(|| anyhow!("profile has no pages"))?;
 
 	let configured = match &context.controller[..] {

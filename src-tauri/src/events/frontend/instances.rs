@@ -88,11 +88,11 @@ pub async fn create_instance(app: AppHandle, mut action: Action, context: Contex
 }
 
 fn instance_images_dir(context: &ActionContext) -> std::path::PathBuf {
-	// Image dirs are page-scoped: page 0 keeps the legacy (page-less) path, other pages get `p<page>`.
-	let page = crate::shared::DEVICES.get(&context.device).map(|d| d.current_page).unwrap_or(0);
+	// Image dirs are page-scoped and keyed by the instance's own context: page 0 keeps
+	// the legacy (page-less) path, other pages get `p<page>`.
 	let mut dir = config_dir().join("images").join(&context.device).join(&context.profile);
-	if page != 0 {
-		dir = dir.join(format!("p{page}"));
+	if context.page != 0 {
+		dir = dir.join(format!("p{}", context.page));
 	}
 	dir.join(format!("{}.{}.{}", context.controller, context.position, context.index))
 }
@@ -128,6 +128,7 @@ pub async fn move_instance(source: Context, destination: Context, retain: bool) 
 					profile: destination.profile.clone(),
 					controller: destination.controller.clone(),
 					position: destination.position,
+					page: destination.page,
 					index: child.context.index,
 				}
 			} else {

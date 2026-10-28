@@ -34,7 +34,7 @@
 	}
 
 	async function handleDrop({ dataTransfer }: DragEvent, controller: string, position: number) {
-		let context = { device: device.id, profile: profile.id, controller, position };
+		let context = { device: device.id, profile: profile.id, controller, position, page: device.current_page };
 		let array = controller == "Encoder" ? profile.sliders : controller == "Infobar" ? profile.infobars : profile.keys;
 		if (dataTransfer?.getData("action")) {
 			let action = JSON.parse(dataTransfer?.getData("action"));
@@ -48,7 +48,7 @@
 			let oldArray = oldController == "Encoder" ? profile.sliders : oldController == "Infobar" ? profile.infobars : profile.keys;
 			let oldPosition = parseInt(dataTransfer?.getData("position"));
 			let response: ActionInstance = await invoke("move_instance", {
-				source: { device: device.id, profile: profile.id, controller: oldController, position: oldPosition },
+				source: { device: device.id, profile: profile.id, controller: oldController, position: oldPosition, page: device.current_page },
 				destination: context,
 				retain: false,
 			});
@@ -215,7 +215,7 @@
 				<div class="flex flex-row" role="row">
 					{#each { length: device.columns } as _, c}
 						<Key
-							context={{ device: device.id, profile: profile.id, controller: "Keypad", position: r * device.columns + c }}
+							context={{ device: device.id, profile: profile.id, controller: "Keypad", position: r * device.columns + c, page: device.current_page }}
 							bind:inslot={profile.keys[r * device.columns + c]}
 							on:dragover={handleDragOver}
 							on:drop={(event) => handleDrop(event, "Keypad", r * device.columns + c)}
@@ -234,7 +234,7 @@
 		<div class="flex flex-row justify-between" role="row" style={`width: ${keypadRowWidth}px;`}>
 			{#each { length: device.encoders } as _, i}
 				<Key
-					context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i }}
+					context={{ device: device.id, profile: profile.id, controller: "Encoder", position: i, page: device.current_page }}
 					bind:inslot={profile.sliders[i]}
 					on:dragover={handleDragOver}
 					on:drop={(event) => handleDrop(event, "Encoder", i)}
@@ -254,7 +254,7 @@
 					{#each { length: device.infobars } as _, j}
 						<div class="px-3.5 py-[3.5px]">
 							<Key
-								context={{ device: device.id, profile: profile.id, controller: "Infobar", position: j }}
+								context={{ device: device.id, profile: profile.id, controller: "Infobar", position: j, page: device.current_page }}
 								bind:inslot={profile.infobars[j]}
 								on:dragover={handleDragOver}
 								on:drop={(event) => handleDrop(event, "Infobar", j)}
@@ -268,7 +268,7 @@
 					{/each}
 				{/if}
 				<Key
-					context={{ device: device.id, profile: profile.id, controller: "Keypad", position: device.rows * device.columns + i }}
+					context={{ device: device.id, profile: profile.id, controller: "Keypad", position: device.rows * device.columns + i, page: device.current_page }}
 					bind:inslot={profile.keys[device.rows * device.columns + i]}
 					on:dragover={handleDragOver}
 					on:drop={(event) => handleDrop(event, "Keypad", device.rows * device.columns + i)}
