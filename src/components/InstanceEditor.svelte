@@ -5,7 +5,7 @@
 	import { renderImage, resizeImage } from "$lib/rendererHelper";
 
 	import { invoke } from "@tauri-apps/api/core";
-	import { onMount } from "svelte";
+	import { onMount, tick } from "svelte";
 
 	export let instance: ActionInstance;
 	export let showEditor: boolean;
@@ -22,6 +22,59 @@
 	let fileInput: HTMLInputElement;
 	let solidColourInput: HTMLInputElement;
 	let backgroundColourInput: HTMLInputElement;
+
+	let textInput: HTMLTextAreaElement;
+	let showEmojiPicker = false;
+	// Enough everyday emoji to cover most button-title use; the textarea itself accepts anything else.
+	const EMOJIS = [
+		"😀","😆","😅","😂","🥹","😊","😍","🤩","😘","😎","🤔","🥳","😴","😭","😡","🤯",
+		"🥰","😇","🙃","😱","🤗","🤫","🫡","🤤","😷","🤒","🥺","😤","🤠","🤪","🧐","😬",
+		"👍","👎","👌","🤝","🙏","👏","💪","🫶","✌️","🤞","👋","🫡","🖐️","✊","☝️","🤙",
+		"❤️","🧡","💛","💚","💙","💜","🖤","🤍","💯","✨","⚡","🔥","💥","💫","⭐","🌟",
+		"✅","❌","❓","❗","💬","💤","📝","📌","📎","🔒","🔑","⚠️","🚫","🔄","➡️","⬅️",
+		"⏰","📅","📞","✉️","🎮","🎧","🎬","📷","🖥️","💡","🚀","🏁","🏆","🎯","🎉","🎁",
+		"🍕","🍔","☕","🍺","🎂","🧠","👀","🤖","🌈","☀️","🌙","☁️","❄️","🌊","🍀","🌸",
+	];
+
+	function insertEmoji(emoji: string) {
+		// Assign through the reactive chain (instance.states[state], not an alias): Svelte only
+		// invalidates assignments written against the component variable itself.
+		const current = instance.states[state].text_override ?? "";
+		if (textInput) {
+			const start = textInput.selectionStart ?? current.length;
+			const end = textInput.selectionEnd ?? start;
+			const next = current.slice(0, start) + emoji + current.slice(end);
+			instance.states[state].text_override = next;
+			// Post-assignment self-assign so the send guard reactive block reruns (see below).
+			instance = instance;
+			// Field is focused, so the echo-sync block skips it; keep the DOM in step ourselves.
+			textInput.value = next;
+			const caret = start + emoji.length;
+			tick().then(() => {
+				textInput.focus();
+				textInput.setSelectionRange(caret, caret);
+			});
+		} else {
+			instance.states[state].text_override = current + emoji;
+			instance = instance;
+		}
+	}
+
+	function onTextInput() {
+		// Assign through the reactive chain + self-assign `instance`: Svelte only invalidates
+		// chained writes via a local variable reassignment, and the send guard below depends
+		// on `instance`.
+		instance.states[state].text_override = textInput.value;
+		instance = instance;
+	}
+
+	// The backend echoes every edit back via update_state, which replaces `instance`. Rewriting
+	// textarea.value mid-typing (stale echo vs faster keystrokes) reverts+loses characters, so
+	// outside values are only pushed into the field while it is NOT focused. When the user
+	// blurs or the next echo/state-change fires, it catches up.
+	$: if (textInput && document.activeElement !== textInput) {
+		textInput.value = instance.states[state].text_override ?? "";
+	}
 
 	function adjustImageScale(delta: number) {
 		const next = (instance.states[state].image_scale || 100) + delta;
@@ -47,6 +100,7 @@
 		reader.readAsDataURL(file);
 	}
 
+	// Structural probe: log every render/value sweep of instance.states[state].text_override
 	function update(instance: ActionInstance) {
 		bold = instance.states[state].style.includes("Bold");
 		italic = instance.states[state].style.includes("Italic");
@@ -56,6 +110,15 @@
 	// update_state (to repaint the device), so an identity-only change must not be
 	// re-sent or the echo loop would spin save+emit on every keystroke.
 	let lastStateSent = "";
+	// Resync the dedup key ONLY on identity change: an echo from the backend replaces
+	// `instance` wholesale (new object), while local typing reassigns the same object, so
+	// comparing identity leaves the guard free to fire on keystrokes and still lets a
+	// stale echo die instead of bouncing back into another (send-echo) loop iteration.
+	let lastInstance = null;
+	$: if (instance !== lastInstance) {
+		lastInstance = instance;
+		lastStateSent = JSON.stringify(instance.states[state]);
+	}
 	$: {
 		const serialized = JSON.stringify(instance.states[state]);
 		if (serialized != lastStateSent) {
@@ -214,16 +277,37 @@
 		/>
 
 		<div class="flex flex-col justify-center pl-4 pr-2 pt-4 pb-2 space-y-2">
-			<div class="flex flex-row items-center space-x-2">
-				<label for="editor-text">{$t("instance_editor.text")}</label>
-				<textarea
-					bind:value={instance.states[state].text_override}
-					placeholder={instance.states[state].text}
-					rows="1"
-					class="w-full px-1 text-neutral-300 bg-neutral-600 border border-neutral-500 rounded-lg resize-none"
-					id="editor-text"
-				/>
+			<div class="flex flex-row items-start space-x-2">
+				<label for="editor-text" class="mt-1">{$t("instance_editor.text")}</label>
+				<div class="relative w-full">
+					<textarea
+						bind:this={textInput}
+						on:input={onTextInput}
+						placeholder={instance.states[state].text}
+						rows="2"
+						class="w-full px-1 text-neutral-300 bg-neutral-600 border border-neutral-500 rounded-lg resize-none"
+						id="editor-text"
+					/>
+					<button
+						type="button"
+						class="absolute bottom-1 right-1 px-1 text-sm bg-neutral-700 hover:bg-neutral-500 transition-colors border border-neutral-500 rounded-md"
+						title="Emoji"
+						aria-label="Insert emoji"
+						on:click={() => (showEmojiPicker = !showEmojiPicker)}
+					>
+						😀
+					</button>
+				</div>
 			</div>
+			{#if showEmojiPicker}
+				<div class="grid max-h-36 grid-cols-16 gap-1 overflow-y-auto p-2 bg-neutral-800 border border-neutral-600 rounded-lg">
+					{#each EMOJIS as emoji}
+						<button type="button" class="px-1 py-0.5 text-lg rounded hover:bg-neutral-600 transition-colors" on:click={() => insertEmoji(emoji)}>
+							{emoji}
+						</button>
+					{/each}
+				</div>
+			{/if}
 			<div class="flex flex-row items-center">
 				<label for="editor-colour" class="mr-2">{$t("instance_editor.colour")}</label>
 				<input

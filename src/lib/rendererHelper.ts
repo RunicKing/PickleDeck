@@ -109,35 +109,86 @@ export async function renderImage(
 	// Draw text
 	if (state.show) {
 		const textSource = state.text_override || state.text;
-		const size = state.size * 2 * scale;
+		const margin = 6 * scale;
+		const maxWidth = canvas.width - margin * 2;
+		const maxHeight = canvas.height - margin * 2;
+		const stylePrefix = (state.style.includes("Bold") ? "bold " : "") + (state.style.includes("Italic") ? "italic " : "");
+		const family = `"${state.family}", "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
+
+		// Wrap the title into lines: on spaces where possible, on code points (emoji-safe)
+		// when a single word is longer than the button.
+		const layoutLines = (fontSize: number) => {
+			context.font = stylePrefix + `${fontSize}px ${family}`;
+			const lines: Array<{ text: string; width: number }> = [];
+			for (const raw of textSource.split("\n")) {
+				const words: string[] = [];
+				for (const word of raw.split(" ")) {
+					if (context.measureText(word).width <= maxWidth || word == "") {
+						words.push(word);
+						continue;
+					}
+					let chunk = "";
+					for (const symbol of Array.from(word)) {
+						if (chunk && context.measureText(chunk + symbol).width > maxWidth) {
+							words.push(chunk);
+							chunk = symbol;
+						} else {
+							chunk += symbol;
+						}
+					}
+					if (chunk) words.push(chunk);
+				}
+				let current = "";
+				for (const word of words) {
+					const candidate = current && word ? current + " " + word : current || word;
+					if (current && context.measureText(candidate).width > maxWidth) {
+						lines.push({ text: current, width: context.measureText(current).width });
+						current = word;
+					} else {
+						current = candidate;
+					}
+				}
+				lines.push({ text: current, width: context.measureText(current).width });
+			}
+			return lines;
+		};
+
+		let size = state.size * 2 * scale;
+		let lines = layoutLines(size);
+		// Auto-fit: shrink the font until the wrapped block fits on the button.
+		while ((lines.length * size > maxHeight || lines.some((line) => line.width > maxWidth)) && size > 8 * scale) {
+			size = Math.max(8 * scale, size * 0.9);
+			lines = layoutLines(size);
+		}
+
 		context.textAlign = "center";
-		context.font =
-			(state.style.includes("Bold") ? "bold " : "") + (state.style.includes("Italic") ? "italic " : "") + `${size}px "${state.family}", sans-serif`;
 		context.fillStyle = state.colour;
 		context.strokeStyle = state.stroke_colour;
 		context.lineWidth = state.stroke_size * scale;
 		context.textBaseline = "top";
 		const x = canvas.width / 2;
-		let y = canvas.height / 2 - size * textSource.split("\n").length * 0.5;
+		const blockHeight = lines.length * size;
+		let y = canvas.height / 2 - blockHeight / 2;
 		switch (state.alignment) {
 			case "top":
-				y = context.lineWidth;
+				y = margin;
 				break;
 			case "bottom":
-				y = canvas.height - size * textSource.split("\n").length - context.lineWidth;
+				y = canvas.height - blockHeight - margin;
 				break;
 		}
-		for (const [index, line] of Object.entries(textSource.split("\n"))) {
-			context.strokeText(line, x, y + size * parseInt(index));
-			context.fillText(line, x, y + size * parseInt(index));
+		for (const [index, line] of Object.entries(lines)) {
+			const lineX = x;
+			const lineY = y + size * parseInt(index);
+			context.strokeText(line.text, lineX, lineY);
+			context.fillText(line.text, lineX, lineY);
 			if (state.underline) {
-				const width = context.measureText(line).width;
 				// Set to black for the outline, since it uses the same fill style info as the text colour.
 				context.fillStyle = "black";
-				context.fillRect(x - width / 2 - 3, y + size * parseInt(index) + size, width + 6, 9);
+				context.fillRect(lineX - line.width / 2 - 3, lineY + size, line.width + 6, 9);
 				// Reset to the user's choice of text colour.
 				context.fillStyle = state.colour;
-				context.fillRect(x - width / 2, y + size * parseInt(index) + size + 4, width, 3);
+				context.fillRect(lineX - line.width / 2, lineY + size + 4, line.width, 3);
 			}
 		}
 	}
