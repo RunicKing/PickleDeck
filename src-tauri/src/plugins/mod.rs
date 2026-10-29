@@ -36,6 +36,48 @@ enum PluginInstance {
 pub static DEVICE_NAMESPACES: LazyLock<RwLock<HashMap<String, String>>> = LazyLock::new(|| RwLock::new(HashMap::new()));
 static INSTANCES: LazyLock<Mutex<HashMap<String, PluginInstance>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Job object every plugin child process is assigned to, with kill-on-close: when this
+/// process exits (graceful quit, force-kill or crash) the last job handle closes and
+/// Windows terminates all assigned processes including grandchildren (e.g. node spawning
+/// console hosts). Without it, force-killed app runs leak one batch of plugin runtimes
+/// per launch. The handle lives for the whole app lifetime — dropping it early would
+/// kill every running plugin.
+#[cfg(windows)]
+static PLUGIN_JOB: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+#[cfg(windows)]
+fn plugin_job() -> windows_sys::Win32::Foundation::HANDLE {
+	*PLUGIN_JOB.get_or_init(|| unsafe {
+		use windows_sys::Win32::System::JobObjects::{
+			CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+			JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+		};
+		let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+		assert!(!job.is_null(), "failed to create plugin job object");
+		let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+		info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		let ok = SetInformationJobObject(
+			job,
+			JobObjectExtendedLimitInformation,
+			&info as *const _ as *const core::ffi::c_void,
+			std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+		);
+		assert!(ok != 0, "failed to configure plugin job object");
+		job as usize
+	}) as windows_sys::Win32::Foundation::HANDLE
+}
+
+/// Assign a freshly spawned plugin child (and, transitively, its own children) to the
+/// kill-on-close job. Assignment can only fail if the child already belongs to another
+/// job, which would be unusual; ignore the error rather than failing the spawn.
+#[cfg(windows)]
+fn assign_child_to_job(child: &Child) {
+	use std::os::windows::io::AsRawHandle;
+	unsafe {
+		windows_sys::Win32::System::JobObjects::AssignProcessToJobObject(plugin_job(), child.as_raw_handle());
+	}
+}
+
 pub static PORT_BASE: LazyLock<u16> = LazyLock::new(|| {
 	let mut base = 57116;
 	loop {
@@ -471,6 +513,8 @@ pub fn initialise_plugins() {
 			match f() {
 				Ok((plugin_uuid, child_type, mut command)) => match command.spawn() {
 					Ok(child) => {
+						#[cfg(windows)]
+						assign_child_to_job(&child);
 						INSTANCES.blocking_lock().insert(
 							plugin_uuid,
 							match child_type {
